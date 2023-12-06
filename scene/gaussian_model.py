@@ -58,6 +58,10 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
 
+        # PROFILING
+        self.iteration = 0
+        self.stats = [] # For logging iterations and number of points
+
     def capture(self):
         return (
             self.active_sh_degree,
@@ -168,6 +172,7 @@ class GaussianModel:
 
     def update_learning_rate(self, iteration):
         ''' Learning rate scheduling per step '''
+        self.iteration = iteration
         for param_group in self.optimizer.param_groups:
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
@@ -400,7 +405,16 @@ class GaussianModel:
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
 
+        self.append_stats()
+
         torch.cuda.empty_cache()
+
+    def append_stats(self):
+        self.stats.append({
+            "iter": self.iteration,
+            "num_points": self.get_xyz.shape[0],
+            "memory": torch.cuda.memory_allocated() / 1024 / 1024 # in MB
+        })
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
