@@ -17,6 +17,11 @@ class GroupParams:
     pass
 
 class ParamGroup:
+    """
+    Generic class for parsing arguments.
+    Meant to be inherted, and in child init, we can define the parameters to parse as class variables, and also setting their default values.
+    setting a .<property> will create a --<property> argument, and setting a ._property will do that and also a -<property>[0:1] shorthand.
+    """
     def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
         group = parser.add_argument_group(name)
         for key, value in vars(self).items():

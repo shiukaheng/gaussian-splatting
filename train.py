@@ -28,28 +28,39 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
-def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, train_cam_limit = None):
+# Training loop
+def training(
+        dataset,
+        opt, 
+        pipe, 
+        testing_iterations, 
+        saving_iterations, 
+        checkpoint_iterations, 
+        checkpoint, 
+        debug_from, 
+        train_cam_limit = None
+        ):
     first_iter = 0
-    tb_writer = prepare_output_and_logger(dataset)
-    gaussians = GaussianModel(dataset.sh_degree)
-    scene = Scene(dataset, gaussians, train_cam_limit=train_cam_limit)
-    gaussians.training_setup(opt)
+    tb_writer = prepare_output_and_logger(dataset) # Tensorboard writer
+    gaussians = GaussianModel(dataset.sh_degree) # Initialize model (gaussians)
+    scene = Scene(dataset, gaussians, train_cam_limit=train_cam_limit) # Initialize scene (cameras, gaussians, etc.)
+    gaussians.training_setup(opt) # Pass optimization parameters to model
     if checkpoint:
-        (model_params, first_iter) = torch.load(checkpoint)
+        (model_params, first_iter) = torch.load(checkpoint) # Load checkpoint if provided
         gaussians.restore(model_params, opt)
 
-    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0]
-    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    bg_color = [1, 1, 1] if dataset.white_background else [0, 0, 0] # Background color
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda") # Background color as tensor
 
-    iter_start = torch.cuda.Event(enable_timing = True)
+    iter_start = torch.cuda.Event(enable_timing = True) # Timing events for profiling
     iter_end = torch.cuda.Event(enable_timing = True)
 
     viewpoint_stack = None
-    ema_loss_for_log = 0.0
+    ema_loss_for_log = 0.0 # Exponential moving average of loss for logging
     progress_bar = tqdm(range(first_iter, opt.iterations), desc="Training progress")
     first_iter += 1
-    for iteration in range(first_iter, opt.iterations + 1):        
-        if network_gui.conn == None:
+    for iteration in range(first_iter, opt.iterations + 1): # Training loop
+        if network_gui.conn == None: # If no GUI connection, we just train
             network_gui.try_connect()
         while network_gui.conn != None:
             try:
@@ -64,40 +75,41 @@ def training(dataset, opt, pipe, testing_iterations, saving_iterations, checkpoi
             except Exception as e:
                 network_gui.conn = None
 
-        iter_start.record()
+        iter_start.record() # Start timing
 
         gaussians.update_learning_rate(iteration)
 
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 1000 == 0:
-            gaussians.oneupSHdegree()
+            gaussians.oneupSHdegree() # Progressive SH training for better convergence
 
         # Pick a random Camera
         if not viewpoint_stack:
-            viewpoint_stack = scene.getTrainCameras().copy()
-        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1))
+            viewpoint_stack = scene.getTrainCameras().copy() # Get training cameras
+        viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1)) # Pick a random camera
 
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
 
-        bg = torch.rand((3), device="cuda") if opt.random_background else background
+        bg = torch.rand((3), device="cuda") if opt.random_background else background # Random background, presumably so we do not depend on background color?
 
-        render_pkg = render(viewpoint_cam, gaussians, pipe, bg)
+        render_pkg = render(viewpoint_cam, gaussians, pipe, bg) # Render the scene
         image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        # What is visibility filter and radii?
 
         # Loss
-        gt_image = viewpoint_cam.original_image.cuda()
-        Ll1 = l1_loss(image, gt_image)
-        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image))
-        loss.backward()
+        gt_image = viewpoint_cam.original_image.cuda() # Ground truth image
+        Ll1 = l1_loss(image, gt_image) # L1 loss (per pixel)
+        loss = (1.0 - opt.lambda_dssim) * Ll1 + opt.lambda_dssim * (1.0 - ssim(image, gt_image)) # SSIM loss (per pixel)
+        loss.backward() # Backpropagate loss
 
-        iter_end.record()
+        iter_end.record() # End timing
 
         with torch.no_grad():
             # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            if iteration % 10 == 0:
+            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log # Exponential moving average of loss for logging
+            if iteration % 10 == 0: # Update progress bar
                 progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
@@ -195,7 +207,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
-    lp = ModelParams(parser)
+    lp = ModelParams(parser) # We are simply modularly extracting parts of the arguments into different classes
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
     parser.add_argument('--ip', type=str, default="127.0.0.1")
@@ -218,7 +230,7 @@ if __name__ == "__main__":
 
     # Start GUI server, configure and run training
     network_gui.init(args.ip, args.port)
-    torch.autograd.set_detect_anomaly(args.detect_anomaly)
+    torch.autograd.set_detect_anomaly(args.detect_anomaly) # Will trace back the graph if an error occurs, and raise error for NaNs
     stats = training(lp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from)
 
     # All done

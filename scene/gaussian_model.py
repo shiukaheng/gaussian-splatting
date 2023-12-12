@@ -416,6 +416,11 @@ class GaussianModel:
             "memory": torch.cuda.memory_allocated() / 1024 / 1024 # in MB
         })
 
-    def add_densification_stats(self, viewspace_point_tensor, update_filter):
+    def add_densification_stats(
+            self, 
+            viewspace_point_tensor, # Points in 3D space
+            update_filter # Mask that determines which points are updated
+        ):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
-        self.denom[update_filter] += 1
+        # Add length of gradient, gets first two components of gradient (x,y) in VIEW space. Z (depth) may be irrelevant.
+        self.denom[update_filter] += 1 # Add 1 to denominator for each point, so we can average the gradient later
