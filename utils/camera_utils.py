@@ -14,6 +14,9 @@ import numpy as np
 from utils.general_utils import PILtoTorch
 from utils.graphics_utils import fov2focal
 
+
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+
 WARNED = False
 
 def loadCam(args, id, cam_info, resolution_scale):
@@ -58,6 +61,43 @@ def cameraList_from_camInfos(cam_infos, resolution_scale, args):
         camera_list.append(loadCam(args, id, c, resolution_scale))
 
     return camera_list
+
+# def cameraList_from_camInfos(cam_infos, resolution_scale, args):
+#     camera_list = []
+
+#     # Define how many threads to use
+#     num_threads = 4  # Adjust this based on your system's capabilities
+
+#     # Function to be executed in parallel
+#     def process_camera(id, cam_info):
+#         return loadCam(args, id, cam_info, resolution_scale)
+
+#     # Using ThreadPoolExecutor to parallelize
+#     with ThreadPoolExecutor(max_workers=num_threads) as executor:
+#         # Schedule the loadCam function to be executed for each camera
+#         futures = [executor.submit(process_camera, id, c) for id, c in enumerate(cam_infos)]
+
+#         # Wait for all futures to complete
+#         for future in futures:
+#             camera_list.append(future.result())
+
+#     return camera_list
+
+# def cameraList_from_camInfos(cam_infos, resolution_scale, args):
+#     camera_list = []
+
+#     num_processes = 4  # Adjust based on your system
+
+#     def process_camera(id, cam_info):
+#         return loadCam(args, id, cam_info, resolution_scale)
+
+#     with ProcessPoolExecutor(max_workers=num_processes) as executor:
+#         futures = [executor.submit(process_camera, id, c) for id, c in enumerate(cam_infos)]
+
+#         for future in futures:
+#             camera_list.append(future.result())
+
+#     return camera_list
 
 def camera_to_JSON(id, camera : Camera):
     Rt = np.zeros((4, 4))

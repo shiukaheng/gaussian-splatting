@@ -87,6 +87,9 @@ def get_camera_name(cam):
     ext = os.path.splitext(name)
     if (len(ext[1]) == 0):
         name = ext[0] + os.path.splitext(cam.photo.path)[1]
+    # If not ends with ".jpg" / ".jpeg", append ".jpg" to the name
+    if not name.lower().endswith((".jpg", ".jpeg")):
+        name += ".jpg"
     return name
 
 def clean_dir(folder, confirm_deletion):
@@ -331,8 +334,7 @@ def save_undistorted_images(params, frame, folder, calibs):
             c.jpeg_quality = params.image_quality
             img.save(folder + name, c)
         else:
-            print(folder + name)
-            img.save(folder + name) # Throwing error
+            img.save(folder + name)
         cnt += 1
     print("Undistorted", cnt, "cameras")
 
