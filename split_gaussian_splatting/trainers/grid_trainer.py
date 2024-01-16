@@ -1,0 +1,1 @@
+# Trainer that splits space into a grid of models and trains them seperately, then merges them into one final model.
