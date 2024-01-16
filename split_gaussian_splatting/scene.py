@@ -23,9 +23,9 @@ class Scene:
     gaussians : GaussianModel
     def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], train_cam_limit = None):
 
-        self.model_path = args.model_path 
-        self.loaded_iter = None
-        self.gaussians = gaussians
+        self.model_path = args.model_path # The path to the model directory
+        self.loaded_iter = None # The iteration we loaded from (or None if we did not load from a previous iteration)
+        self.gaussians = gaussians # The gaussian model
 
         # If we want to load a previous iteration, we get the request iteration or the max
         # TODO: This should be in a separate method
@@ -113,3 +113,4 @@ class Scene:
     # Get the test cameras for a given scale
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
+    
