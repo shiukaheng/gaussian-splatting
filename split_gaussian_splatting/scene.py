@@ -14,9 +14,12 @@ import random
 import json
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import sceneLoadTypeCallbacks
-from scene.gaussian_model import GaussianModel
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
+
+# The two important classes
+from scene.cameras import Camera
+from scene.gaussian_model import GaussianModel
 
 class Scene:
 
@@ -115,7 +118,8 @@ class Scene:
         return self.test_cameras[scale]
     
     def subsetCameras(self):
-        # Manipulate self.train_cameras[all scales] (an array)
+        # Manipulate self.train_cameras[all scales] (an array of Cameras)
+        # We should be able to use the translation property to filter the camera
         pass
 
     def subsetGaussians(self):
@@ -129,4 +133,11 @@ class Scene:
         # Check COLMAP loader line 211, seems to log 3D point IDs per camera. That is good news!
 
         # In order to split a new scene from an existing one, copying model_path,  loaded_iter,  gaussians, train_cameras, test_cameras, cameras_extent should be sufficient
+
+        # image_extrinsics is a dict of Image classes (key is image id assigned by COLMAP), of which the value is a named tuple
+        # which has the value point3D_ids
+
+        # Gaussians right now dont have point ID.
+        # Check BasicPointCloud properties and modify to include point ID
+        # Also, fetchPly will need to be modified to also retrieve the point3D ID (if any! needs investigation)
         pass
