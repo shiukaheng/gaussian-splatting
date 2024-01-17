@@ -114,3 +114,19 @@ class Scene:
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
     
+    def subsetCameras(self):
+        # Manipulate self.train_cameras[all scales] (an array)
+        pass
+
+    def subsetGaussians(self):
+        # Manipulate self.gaussian
+        # See GaussianModel.create_from_pcd
+        # Basically, gaussians are represented by one big tensor. We just have to filter them by attributes (like spatial attributes)
+        pass
+
+    def splitScene(self):
+        # How to do point to camera corespondence? We can estimate from position and camera frustum but its not optimal.
+        # Check COLMAP loader line 211, seems to log 3D point IDs per camera. That is good news!
+
+        # In order to split a new scene from an existing one, copying model_path,  loaded_iter,  gaussians, train_cameras, test_cameras, cameras_extent should be sufficient
+        pass
