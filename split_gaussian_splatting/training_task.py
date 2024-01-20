@@ -44,8 +44,8 @@ class Task:
     compute_cov3D_python: bool = False
     debug: bool = False
 
-    def load_scene(self):
-        scene = Scene(self)
+    def load_scene(self, on_load_progress=None):
+        scene = Scene(self, on_load_progress=on_load_progress)
         return scene
 
     def export_training_namespace(self):
