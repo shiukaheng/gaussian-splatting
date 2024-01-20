@@ -11,6 +11,9 @@
 
 import torch
 import numpy as np
+from arguments import PipelineParams
+from gaussian_renderer import render
+from scene.cameras import Camera
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
 import os
@@ -47,17 +50,18 @@ class GaussianModel:
         Parameters:
         sh_degree (int): The degree of the spherical harmonics used to represent the model
         '''
+        # Added .cuda(), previously was not there
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
-        self._xyz = torch.empty(0)
-        self._features_dc = torch.empty(0)
-        self._features_rest = torch.empty(0)
-        self._scaling = torch.empty(0)
-        self._rotation = torch.empty(0)
-        self._opacity = torch.empty(0)
-        self.max_radii2D = torch.empty(0)
-        self.xyz_gradient_accum = torch.empty(0)
-        self.denom = torch.empty(0)
+        self._xyz = torch.empty(0).cuda()
+        self._features_dc = torch.empty(0).cuda()
+        self._features_rest = torch.empty(0).cuda()
+        self._scaling = torch.empty(0).cuda()
+        self._rotation = torch.empty(0).cuda()
+        self._opacity = torch.empty(0).cuda()
+        self.max_radii2D = torch.empty(0).cuda()
+        self.xyz_gradient_accum = torch.empty(0).cuda()
+        self.denom = torch.empty(0).cuda()
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
@@ -464,6 +468,111 @@ class GaussianModel:
 
     def append_stats(self):
         self.stats.append(self.get_stats())
+
+    def get_camera_visbility_mask(self, camera: Camera):
+        with torch.no_grad():
+            # Alternatively, we could do another implementation for CPU, but now its not required yet.
+            pp = PipelineParams()
+            render_pkg = render(camera, self, pp, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
+            return render_pkg["visibility_filter"]
+    
+    def calculate_bounding_box(self):
+        with torch.no_grad():
+            return torch.min(self.get_xyz, dim=0).values, torch.max(self.get_xyz, dim=0).values
+        
+    def calculate_occupied_grids(self, side_length=10.):
+        with torch.no_grad():
+            min_point, max_point = self.calculate_bounding_box()
+
+            # Convert coordinates to grid indices
+            min_indices = torch.floor(min_point / side_length).int()
+            max_indices = torch.ceil(max_point / side_length).int()
+
+            # Generate grid cell bounding boxes
+            occupied_grids = []
+            for x in range(min_indices[0], max_indices[0]):
+                for y in range(min_indices[1], max_indices[1]):
+                    for z in range(min_indices[2], max_indices[2]):
+                        grid_min = torch.tensor([x, y, z], dtype=torch.float32) * side_length
+                        grid_max = grid_min + side_length
+                        occupied_grids.append((grid_min, grid_max))
+
+            return occupied_grids
+        
+    def split_to_grid(self, side_length=10.):
+        occupied_grids = self.calculate_occupied_grids(side_length)
+        sub_models = []
+
+        for grid_min, grid_max in occupied_grids:
+            grid_min = grid_min.cuda()
+            grid_max = grid_max.cuda()
+            # Determine points within this grid cell
+            in_grid = (self._xyz >= grid_min) & (self._xyz < grid_max)
+            in_grid_mask = in_grid.all(dim=1)
+
+            if in_grid_mask.any():
+                # Create a new GaussianModel for this grid cell
+                sub_model = GaussianModel(self.max_sh_degree)
+                sub_model._xyz = nn.Parameter(self._xyz[in_grid_mask])
+                sub_model._features_dc = nn.Parameter(self._features_dc[in_grid_mask])
+                sub_model._features_rest = nn.Parameter(self._features_rest[in_grid_mask])
+                sub_model._scaling = nn.Parameter(self._scaling[in_grid_mask])
+                sub_model._rotation = nn.Parameter(self._rotation[in_grid_mask])
+                sub_model._opacity = nn.Parameter(self._opacity[in_grid_mask])
+                # max_radii2D, xyz_gradient_accum, and denom
+                sub_model.max_radii2D = self.max_radii2D[in_grid_mask].cuda()
+                sub_model.xyz_gradient_accum = self.xyz_gradient_accum[in_grid_mask].cuda()
+                sub_model.denom = self.denom[in_grid_mask].cuda()
+                
+                sub_model.active_sh_degree = self.active_sh_degree
+                sub_model.max_sh_degree = self.max_sh_degree
+                # Copy other necessary properties and setup functions
+                sub_model.setup_functions()
+                # Add to the list of sub-models
+                sub_models.append(sub_model)
+
+        return sub_models
+    
+    def append(self, other_model):
+        """
+        Appends the contents of another GaussianModel to this one.
+
+        Parameters:
+        other_model (GaussianModel): The model to be appended to this one.
+        """
+        if not isinstance(other_model, GaussianModel):
+            raise ValueError("other_model must be an instance of GaussianModel")
+
+        # Concatenate the properties of both models
+        self._xyz = torch.cat([self._xyz, other_model._xyz], dim=0)
+        self._features_dc = torch.cat([self._features_dc, other_model._features_dc], dim=0)
+        self._features_rest = torch.cat([self._features_rest, other_model._features_rest], dim=0)
+        self._scaling = torch.cat([self._scaling, other_model._scaling], dim=0)
+        self._rotation = torch.cat([self._rotation, other_model._rotation], dim=0)
+        self._opacity = torch.cat([self._opacity, other_model._opacity], dim=0)
+
+        # Update max_radii2D, xyz_gradient_accum, and denom if they are not empty
+        if self.max_radii2D.numel() > 0 and other_model.max_radii2D.numel() > 0:
+            self.max_radii2D = torch.cat([self.max_radii2D, other_model.max_radii2D], dim=0).cuda()
+
+        if self.xyz_gradient_accum.numel() > 0 and other_model.xyz_gradient_accum.numel() > 0:
+            self.xyz_gradient_accum = torch.cat([self.xyz_gradient_accum, other_model.xyz_gradient_accum], dim=0).cuda()
+
+        if self.denom.numel() > 0 and other_model.denom.numel() > 0:
+            self.denom = torch.cat([self.denom, other_model.denom], dim=0).cuda()
+
+        # Ensure the active_sh_degree is set to the maximum of the two models
+        self.active_sh_degree = max(self.active_sh_degree, other_model.active_sh_degree)
+
+    def append_multiple(self, other_models):
+        """
+        Appends the contents of multiple GaussianModels to this one.
+
+        Parameters:
+        other_models (list): A list of GaussianModels to be appended to this one.
+        """
+        for other_model in other_models:
+            self.append(other_model)
 
     def add_densification_stats(
             self, 

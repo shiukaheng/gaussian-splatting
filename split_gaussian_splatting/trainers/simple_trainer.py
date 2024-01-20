@@ -21,7 +21,7 @@ class SimpleTrainer(BaseTrainer):
             scene = task.load_scene()
 
         if not gaussian_model:
-            gaussian_model = scene.create_gaussian()
+            gaussian_model = scene.create_gaussians()
 
         bg = self.create_bg(task)
 
@@ -73,7 +73,7 @@ class SimpleTrainer(BaseTrainer):
 
             torch.cuda.empty_cache()
 
-        return scene
+        return scene, gaussian_model
 
     def create_bg(self, task):
         bg_color = [1, 1, 1] if task.white_background else [0, 0, 0]

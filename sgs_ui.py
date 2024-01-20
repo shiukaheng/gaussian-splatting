@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
+from split_gaussian_splatting.trainers.grid_trainer import GridTrainer
 
 from split_gaussian_splatting.trainers.simple_trainer import SimpleTrainer
 from split_gaussian_splatting.training_task import Task
@@ -91,7 +92,7 @@ def train_models(path, iterations, methods=[SimpleTrainer]):
     return None, None, None
 
 def main():
-    st.set_page_config(layout="wide", page_title="Gaussian Splatting Training Visualization", page_icon="📷")
+    st.set_page_config(page_title="Gaussian Splatting Training Visualization", page_icon="📷")
     st.title("📷 Gaussian Splatting Training Visualization")
 
     data = get_source_path()
@@ -99,7 +100,7 @@ def main():
     # Only proceed with training if the path is not None (i.e., the button has been pressed)
     if data:
         path, iterations = data
-        task, scene, models = train_models(path, iterations)
+        task, scene, models = train_models(path, iterations, [SimpleTrainer, GridTrainer])
         # eval_models(task, scene, models)
 
 if __name__ == "__main__":

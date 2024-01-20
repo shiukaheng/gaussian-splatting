@@ -100,13 +100,13 @@ class Scene:
         with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
             json.dump(json_cams, file)
 
-    def create_gaussian_from_source(self):
+    def create_gaussians_from_source(self):
         gaussian_model = GaussianModel(self.args.sh_degree)
         gaussian_model.create_from_pcd(self.scene_info.point_cloud, self.cameras_extent)
         gaussian_model.training_setup(self.args)
         return gaussian_model
 
-    def create_gaussian(self):
+    def create_gaussians(self):
         gaussian_model = GaussianModel(self.args.sh_degree)
         if self.loaded_iter:
             gaussian_model.load_ply(os.path.join(self.model_path,
@@ -116,7 +116,7 @@ class Scene:
             gaussian_model.training_setup(self.args)
             return gaussian_model
         else:
-            return self.create_gaussian_from_source()
+            return self.create_gaussians_from_source()
 
     # Save the gaussians to a ply file
     def save(self, iteration):

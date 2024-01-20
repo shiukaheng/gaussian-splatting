@@ -14,6 +14,7 @@ from tqdm import tqdm
 from gaussian_renderer import render
 from scene import Scene
 from scene.cameras import Camera
+from scene.gaussian_model import GaussianModel
 from split_gaussian_splatting.training_task import Task
 from utils.loss_utils import ssim
 import lpips
@@ -21,13 +22,13 @@ from utils.image_utils import psnr
 
 lpips_fn = lpips.LPIPS(net='vgg').cuda()
 
-def evaluate_camera(scene: Scene, task: Task, camera: Camera):
+def evaluate_camera(model: GaussianModel, task: Task, camera: Camera):
 
     bg_color = [1,1,1] if task.white_background else [0,0,0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-    gt = camera.original_image[0:3, :, :]
-    pred = render(camera, scene.gaussians, task, background)["render"]
+    gt = camera.original_image[0:3, :, :].cuda()
+    pred = render(camera, model, task, background)["render"]
 
     s = ssim(pred, gt)
     p = psnr(pred, gt)
@@ -35,7 +36,7 @@ def evaluate_camera(scene: Scene, task: Task, camera: Camera):
 
     return s, p, l
 
-def evaluate_scene(scene: Scene, task: Task):
+def evaluate_scene(scene: Scene, model: GaussianModel, task: Task):
     with torch.no_grad():
 
         train_ssim_accum = 0
@@ -52,13 +53,13 @@ def evaluate_scene(scene: Scene, task: Task):
             'test_per_image': {}
         }
 
-        train_cameras = scene.getTrainCameras()
-        test_cameras = scene.getTestCameras()
+        train_cameras = scene.getTrainCameras() or []
+        test_cameras = scene.getTestCameras() or []
 
         # Evaluate training cameras
         print("Evaluating training cameras")
         for camera in tqdm(train_cameras):
-            ssim_val, psnr_val, lpips_val = evaluate_camera(scene, task, camera)
+            ssim_val, psnr_val, lpips_val = evaluate_camera(model, task, camera)
             ssim_val, psnr_val, lpips_val = ssim_val.item(), psnr_val.mean(dtype=float).item(), lpips_val.item()
             results['train_per_image'][camera.uid] = {'ssim': ssim_val, 'psnr': psnr_val, 'lpips': lpips_val}
             train_ssim_accum += ssim_val
@@ -67,7 +68,7 @@ def evaluate_scene(scene: Scene, task: Task):
 
         # Evaluate test cameras
         for camera in tqdm(test_cameras):
-            ssim_val, psnr_val, lpips_val = evaluate_camera(scene, task, camera)
+            ssim_val, psnr_val, lpips_val = evaluate_camera(model, task, camera)
             ssim_val, psnr_val, lpips_val = ssim_val.item(), psnr_val.mean(dtype=float).item(), lpips_val.item()
             results['test_per_image'][camera.uid] = {'ssim': ssim_val, 'psnr': psnr_val, 'lpips': lpips_val}
             test_ssim_accum += ssim_val
