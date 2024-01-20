@@ -17,6 +17,8 @@ from utils.graphics_utils import fov2focal
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
+import streamlit as st
+
 WARNED = False
 
 def loadCam(args, id, cam_info, resolution_scale):
@@ -57,8 +59,15 @@ def loadCam(args, id, cam_info, resolution_scale):
 def cameraList_from_camInfos(cam_infos, resolution_scale, args):
     camera_list = []
 
+    if cam_infos is None or len(cam_infos) == 0:
+        return 
+    
+    bar = st.progress(0, text=f'Loading 0/{len(cam_infos)} cameras at {resolution_scale}x resolution')
+
     for id, c in enumerate(cam_infos):
         camera_list.append(loadCam(args, id, c, resolution_scale))
+        bar.progress((id + 1) / len(cam_infos), text=f'Loading {id + 1}/{len(cam_infos)} cameras at {resolution_scale}x resolution')
+    
 
     return camera_list
 

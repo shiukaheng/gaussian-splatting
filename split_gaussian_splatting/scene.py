@@ -21,6 +21,8 @@ from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from scene.cameras import Camera
 from scene.gaussian_model import GaussianModel
 
+import streamlit as st
+
 class Scene:
 
     gaussians : GaussianModel
@@ -82,6 +84,8 @@ class Scene:
 
         # For each resolution scale, load the cameras
         # TODO: This should be a method in a Cameras class
+        st.write(f"Discovered resolution scales: {resolution_scales}")
+
         for resolution_scale in resolution_scales:
             print(f"Loading {len(scene_info.train_cameras)} Train Cameras at scale {resolution_scale}")
             if train_cam_limit:

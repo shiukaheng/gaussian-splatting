@@ -378,9 +378,9 @@ class GaussianModel:
 
     def densify_and_clone(self, grads, grad_threshold, scene_extent):
         # Extract points that satisfy the gradient condition
-        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
+        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False) # If the norm of the gradient is greater than the threshold, we select the point
         selected_pts_mask = torch.logical_and(selected_pts_mask,
-                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
+                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent) # If the max scaling of the point is less than the percent dense, we select the point
         
         new_xyz = self._xyz[selected_pts_mask]
         new_features_dc = self._features_dc[selected_pts_mask]
