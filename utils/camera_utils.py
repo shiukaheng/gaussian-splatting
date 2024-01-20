@@ -9,6 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+from typing import Callable
 from scene.cameras import Camera
 import numpy as np
 from utils.general_utils import PILtoTorch
@@ -56,19 +57,17 @@ def loadCam(args, id, cam_info, resolution_scale):
                   image=gt_image, gt_alpha_mask=loaded_mask,
                   image_name=cam_info.image_name, uid=id, data_device=args.data_device)
 
-def cameraList_from_camInfos(cam_infos, resolution_scale, args):
+def cameraList_from_camInfos(cam_infos, resolution_scale, args, on_load: Callable[[], None] = None):
     camera_list = []
 
     if cam_infos is None or len(cam_infos) == 0:
         return 
-    
-    bar = st.progress(0, text=f'Loading 0/{len(cam_infos)} cameras at {resolution_scale}x resolution')
 
     for id, c in enumerate(cam_infos):
         camera_list.append(loadCam(args, id, c, resolution_scale))
-        bar.progress((id + 1) / len(cam_infos), text=f'Loading {id + 1}/{len(cam_infos)} cameras at {resolution_scale}x resolution')
+        if on_load:
+            on_load()
     
-
     return camera_list
 
 # def cameraList_from_camInfos(cam_infos, resolution_scale, args):

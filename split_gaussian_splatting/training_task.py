@@ -44,9 +44,8 @@ class Task:
     compute_cov3D_python: bool = False
     debug: bool = False
 
-    def get_initial_scene(self):
-        gaussian_model = GaussianModel(self.sh_degree)
-        scene = Scene(self, gaussian_model)
+    def load_scene(self):
+        scene = Scene(self)
         return scene
 
     def export_training_namespace(self):

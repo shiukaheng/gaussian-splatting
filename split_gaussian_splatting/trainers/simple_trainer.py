@@ -1,6 +1,7 @@
 from random import randint
 import torch
 from gaussian_renderer import render
+from scene.gaussian_model import GaussianModel
 from split_gaussian_splatting.scene import Scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
 from split_gaussian_splatting.training_task import Task
@@ -14,16 +15,15 @@ class SimpleTrainer(BaseTrainer):
     def __init__(self, iteration_callback: Callable[[int, int, int], None] = None):
         super().__init__(iteration_callback)
 
-    def train(self, task: Task, scene: Scene = None):
+    def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
 
         if not scene:
-            scene = task.get_initial_scene()
+            scene = task.load_scene()
 
-        gaussian_model = scene.gaussians
-        gaussian_model.training_setup(task)
+        if not gaussian_model:
+            gaussian_model = scene.create_gaussian()
 
-        bg_color = [1, 1, 1] if task.white_background else [0, 0, 0]
-        bg = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        bg = self.create_bg(task)
 
         viewpoint_stack = None
 
@@ -74,3 +74,8 @@ class SimpleTrainer(BaseTrainer):
             torch.cuda.empty_cache()
 
         return scene
+
+    def create_bg(self, task):
+        bg_color = [1, 1, 1] if task.white_background else [0, 0, 0]
+        bg = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        return bg

@@ -12,8 +12,9 @@
 import os
 import random
 import json
+from typing import Callable
 from utils.system_utils import searchForMaxIteration
-from scene.dataset_readers import sceneLoadTypeCallbacks
+from scene.dataset_readers import SceneInfo, sceneLoadTypeCallbacks
 from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 
@@ -21,33 +22,40 @@ from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from scene.cameras import Camera
 from scene.gaussian_model import GaussianModel
 
-import streamlit as st
-
 class Scene:
 
-    gaussians : GaussianModel
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None, shuffle=True, resolution_scales=[1.0], train_cam_limit = None):
+    def __init__(self, args : ModelParams, load_iteration=None, shuffle=True, resolution_scales=[1.0], train_cam_limit = None, on_load_progress: Callable[[int, int], None] = None):
 
+        self.args = args # The arguments passed to the program
         self.model_path = args.model_path # The path to the model directory
         self.loaded_iter = None # The iteration we loaded from (or None if we did not load from a previous iteration)
-        self.gaussians = gaussians # The gaussian model
 
-        # If we want to load a previous iteration, we get the request iteration or the max
-        # TODO: This should be in a separate method
+        # Search for newest saved iteration, if requested (-1)
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
             else:
                 self.loaded_iter = load_iteration
-            print("Loading ltrained model at iteration {}".format(self.loaded_iter))
+            print("Loading trained model at iteration {}".format(self.loaded_iter))
 
-        # Create a dictionary of cameras for each resolution scale
-        # TODO: This should be stored in a separate Cameras class, especially when now we are considering dynamically changing cameras and gaussians independently
         self.train_cameras = {}
         self.test_cameras = {}
 
-        # Load in different forms of scene_info
-        # TODO: Better document what scene_info is and figure out where it should be stored
+        self.scene_info: SceneInfo = self.parse_source(args)
+
+        if not self.loaded_iter:
+            self.initialize_camera_json(self.scene_info)
+
+        if shuffle:
+            random.shuffle(self.scene_info.train_cameras)  # Multi-res consistent random shuffling
+            random.shuffle(self.scene_info.test_cameras)  # Multi-res consistent random shuffling
+
+        # Get the radius of the scene and the translation to the center
+        self.cameras_extent = self.scene_info.nerf_normalization["radius"]
+
+        self.load_images(args, resolution_scales, train_cam_limit, self.scene_info, on_load_progress)
+
+    def parse_source(self, args: 'Task'):
         if os.path.exists(os.path.join(args.source_path, "sparse")): # Presumed to be a COLMAP scene
             scene_info = sceneLoadTypeCallbacks["Colmap"](args.source_path, args.images, args.eval)
         elif os.path.exists(os.path.join(args.source_path, "transforms_train.json")): # Presumed to be a Blender scene
@@ -55,58 +63,60 @@ class Scene:
             scene_info = sceneLoadTypeCallbacks["Blender"](args.source_path, args.white_background, args.eval)
         else:
             assert False, "Could not recognize scene type!"
+        return scene_info
 
-        # If we do not have a loaded iteration
-        # TODO: We should really pre-convert it to our internal representation first so we don't have to write two versions of loading logic!
-        if not self.loaded_iter:
-            with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
-                dest_file.write(src_file.read()) # Copy the original ply file to a file called input.ply in the model path
-            # Create two camera lists
-            json_cams = []
-            camlist = []
-            if scene_info.test_cameras: # If we have test cameras, add them to the list
-                camlist.extend(scene_info.test_cameras)
-            if scene_info.train_cameras: # If we have train cameras, add them to the list
-                camlist.extend(scene_info.train_cameras)
-            # We now convert the cameras to JSON form, so we can save them to a file
-            for id, cam in enumerate(camlist):
-                json_cams.append(camera_to_JSON(id, cam))
-            with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
-                json.dump(json_cams, file)
-
-        # If we want to shuffle cameras
-        if shuffle:
-            random.shuffle(scene_info.train_cameras)  # Multi-res consistent random shuffling
-            random.shuffle(scene_info.test_cameras)  # Multi-res consistent random shuffling
-
-        # Get the radius of the scene and the translation to the center
-        self.cameras_extent = scene_info.nerf_normalization["radius"]
-
-        # For each resolution scale, load the cameras
-        # TODO: This should be a method in a Cameras class
-        st.write(f"Discovered resolution scales: {resolution_scales}")
-
+    def load_images(self, args: 'Task', resolution_scales, train_cam_limit, scene_info: SceneInfo, on_load_progress: Callable[[int, int], None] = None):
+        total = len(resolution_scales) * (len(scene_info.train_cameras) + len(scene_info.test_cameras))
+        loaded = 0
         for resolution_scale in resolution_scales:
             print(f"Loading {len(scene_info.train_cameras)} Train Cameras at scale {resolution_scale}")
+            def increment():
+                nonlocal loaded
+                loaded += 1
+                if on_load_progress:
+                    on_load_progress(loaded, total)
             if train_cam_limit:
                 print(f"Limiting train cameras to {train_cam_limit}")
-                self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras[:train_cam_limit], resolution_scale, args)
+                self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras[:train_cam_limit], resolution_scale, args, on_load=increment)
             else:
-                self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+                self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args, on_load=increment)
             # self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.test_cameras, resolution_scale, args)
 
-        # If we have a loaded iteration, we load the already converted gaussians from PLY
-        # TODO: Again, rewrite to not have to write two versions of loading logic, instead pre-convert to our internal representation
+    def initialize_camera_json(self, scene_info: SceneInfo):
+        with open(scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
+            dest_file.write(src_file.read()) # Copy the original ply file to a file called input.ply in the model path
+            # Create two camera lists
+        json_cams = []
+        camlist = []
+        if scene_info.test_cameras: # If we have test cameras, add them to the list
+            camlist.extend(scene_info.test_cameras)
+        if scene_info.train_cameras: # If we have train cameras, add them to the list
+            camlist.extend(scene_info.train_cameras)
+            # We now convert the cameras to JSON form, so we can save them to a file
+        for id, cam in enumerate(camlist):
+            json_cams.append(camera_to_JSON(id, cam))
+        with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
+            json.dump(json_cams, file)
+
+    def create_gaussian_from_source(self):
+        gaussian_model = GaussianModel(self.args.sh_degree)
+        gaussian_model.create_from_pcd(self.scene_info.point_cloud, self.cameras_extent)
+        gaussian_model.training_setup(self.args)
+        return gaussian_model
+
+    def create_gaussian(self):
+        gaussian_model = GaussianModel(self.args.sh_degree)
         if self.loaded_iter:
-            self.gaussians.load_ply(os.path.join(self.model_path,
+            gaussian_model.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
+            gaussian_model.training_setup(self.args)
+            return gaussian_model
         else:
-            # Otherwise, we create the gaussians from the point cloud
-            self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
+            return self.create_gaussian_from_source()
 
     # Save the gaussians to a ply file
     def save(self, iteration):
@@ -121,27 +131,27 @@ class Scene:
     def getTestCameras(self, scale=1.0):
         return self.test_cameras[scale]
     
-    def subsetCameras(self):
-        # Manipulate self.train_cameras[all scales] (an array of Cameras)
-        # We should be able to use the translation property to filter the camera
-        pass
+    # def subsetCameras(self):
+    #     # Manipulate self.train_cameras[all scales] (an array of Cameras)
+    #     # We should be able to use the translation property to filter the camera
+    #     pass
 
-    def subsetGaussians(self):
-        # Manipulate self.gaussian
-        # See GaussianModel.create_from_pcd
-        # Basically, gaussians are represented by one big tensor. We just have to filter them by attributes (like spatial attributes)
-        pass
+    # def subsetGaussians(self):
+    #     # Manipulate self.gaussian
+    #     # See GaussianModel.create_from_pcd
+    #     # Basically, gaussians are represented by one big tensor. We just have to filter them by attributes (like spatial attributes)
+    #     pass
 
-    def splitScene(self):
-        # How to do point to camera corespondence? We can estimate from position and camera frustum but its not optimal.
-        # Check COLMAP loader line 211, seems to log 3D point IDs per camera. That is good news!
+    # def splitScene(self):
+    #     # How to do point to camera corespondence? We can estimate from position and camera frustum but its not optimal.
+    #     # Check COLMAP loader line 211, seems to log 3D point IDs per camera. That is good news!
 
-        # In order to split a new scene from an existing one, copying model_path,  loaded_iter,  gaussians, train_cameras, test_cameras, cameras_extent should be sufficient
+    #     # In order to split a new scene from an existing one, copying model_path,  loaded_iter,  gaussians, train_cameras, test_cameras, cameras_extent should be sufficient
 
-        # image_extrinsics is a dict of Image classes (key is image id assigned by COLMAP), of which the value is a named tuple
-        # which has the value point3D_ids
+    #     # image_extrinsics is a dict of Image classes (key is image id assigned by COLMAP), of which the value is a named tuple
+    #     # which has the value point3D_ids
 
-        # Gaussians right now dont have point ID.
-        # Check BasicPointCloud properties and modify to include point ID
-        # Also, fetchPly will need to be modified to also retrieve the point3D ID (if any! needs investigation)
-        pass
+    #     # Gaussians right now dont have point ID.
+    #     # Check BasicPointCloud properties and modify to include point ID
+    #     # Also, fetchPly will need to be modified to also retrieve the point3D ID (if any! needs investigation)
+    #     pass
