@@ -1,0 +1,1 @@
+# Instead of training on one view, selects multiple similar views (n = 10) and trains simultaneously, encourages local consistency

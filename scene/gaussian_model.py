@@ -40,8 +40,13 @@ class GaussianModel:
 
         self.rotation_activation = torch.nn.functional.normalize
 
-
     def __init__(self, sh_degree : int):
+        '''
+        Initializes the Gaussian model's tensors
+
+        Parameters:
+        sh_degree (int): The degree of the spherical harmonics used to represent the model
+        '''
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
         self._xyz = torch.empty(0)
@@ -213,9 +218,9 @@ class GaussianModel:
         PlyData([el]).write(path)
 
     def reset_opacity(self):
-        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01))
-        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity")
-        self._opacity = optimizable_tensors["opacity"]
+        opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity)*0.01)) # Reset opacity to 0.01
+        optimizable_tensors = self.replace_tensor_to_optimizer(opacities_new, "opacity") # Replace the opacity tensor in the optimizer
+        self._opacity = optimizable_tensors["opacity"] # Update the opacity tensor
 
     def load_ply(self, path):
         plydata = PlyData.read(path)
@@ -261,18 +266,42 @@ class GaussianModel:
         self.active_sh_degree = self.max_sh_degree
 
     def replace_tensor_to_optimizer(self, tensor, name):
+        """
+        Replaces a specified parameter tensor in the model's optimizer with a new tensor.
+
+        This function is essential when the parameters of a model are dynamically modified during training. 
+        It ensures that the optimizer's internal state is updated to reflect changes in the model's parameters. 
+        Specifically, it resets the optimizer's state regarding the exponential moving average (exp_avg) and the 
+        squared exponential moving average (exp_avg_sq) of the gradients for the new tensor, as the historical 
+        gradient information of the previous tensor is no longer relevant.
+
+        Parameters:
+        tensor (torch.Tensor): The new tensor that is to replace an existing parameter in the optimizer.
+        name (str): The name identifier of the parameter to be replaced. This should match the 'name' key in one of 
+                    the optimizer's parameter groups.
+
+        Returns:
+        dict: A dictionary containing the updated parameter tensor, keyed by the parameter's name.
+
+        Note:
+        This method directly modifies the optimizer attached to the instance of the class it is a part of. It is 
+        assumed that the optimizer has an attribute `param_groups`, a common attribute in PyTorch optimizers.
+
+        Example Usage:
+        model.replace_tensor_to_optimizer(new_tensor, 'weight')
+        """
         optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
-            if group["name"] == name:
-                stored_state = self.optimizer.state.get(group['params'][0], None)
-                stored_state["exp_avg"] = torch.zeros_like(tensor)
-                stored_state["exp_avg_sq"] = torch.zeros_like(tensor)
+        for group in self.optimizer.param_groups: # For each group in the optimizer
+            if group["name"] == name: # If the name of the group is the same as the name of the tensor we want to replace
+                stored_state = self.optimizer.state.get(group['params'][0], None) # Get the state of the optimizer for this group
+                stored_state["exp_avg"] = torch.zeros_like(tensor) # Set the exp_avg to a tensor of zeros with the same shape as the tensor we want to replace
+                stored_state["exp_avg_sq"] = torch.zeros_like(tensor) # Set the exp_avg_sq to a tensor of zeros with the same shape as the tensor we want to replace
 
-                del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter(tensor.requires_grad_(True))
-                self.optimizer.state[group['params'][0]] = stored_state
+                del self.optimizer.state[group['params'][0]] # Delete the state of the optimizer for this group
+                group["params"][0] = nn.Parameter(tensor.requires_grad_(True)) # Set the parameter of the group to the tensor we want to replace
+                self.optimizer.state[group['params'][0]] = stored_state # Set the state of the optimizer for this group to the stored state
 
-                optimizable_tensors[group["name"]] = group["params"][0]
+                optimizable_tensors[group["name"]] = group["params"][0] # Add the parameter of the group to the optimizable tensors
         return optimizable_tensors
 
     def _prune_optimizer(self, mask):
@@ -409,12 +438,32 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    def append_stats(self):
-        self.stats.append({
+    def random_subsample(self, num_points):
+        # Assuming self.point_cloud is a tensor representing your point cloud.
+        total_points = self.get_xyz.shape[0]
+
+        # Ensure num_points is not greater than the total number of points.
+        num_points = min(num_points, total_points)
+
+        # Randomly select indices to keep. torch.randperm generates a permutation of indices.
+        keep_indices = torch.randperm(total_points)[:num_points]
+
+        # Create a mask of True (for keeping points) and False (for removing points).
+        keep_mask = torch.zeros(total_points, dtype=torch.bool)
+        keep_mask[keep_indices] = True
+
+        # Prune points that are not in keep_mask.
+        self.prune_points(~keep_mask)
+
+    def get_stats(self):
+        return {
             "iter": self.iteration,
             "num_points": self.get_xyz.shape[0],
             "memory": torch.cuda.memory_allocated() / 1024 / 1024 # in MB
-        })
+        }
+
+    def append_stats(self):
+        self.stats.append(self.get_stats())
 
     def add_densification_stats(
             self, 
