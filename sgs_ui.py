@@ -49,40 +49,42 @@ def train_models(path, iterations, methods=[SimpleTrainer]):
     with s2:
         training_status = s2.empty()
 
-        tabs = st.tabs([x.__name__ for x in methods])
-        method_tabs = zip(tabs, methods)
+        # Prepare columns for two altair charts
+        col1, col2 = s2.columns(2)
+        placeholder_gaussians = col1.empty()
+        placeholder_memory = col2.empty()
 
-        for i, (tab, method) in enumerate(method_tabs):
+        data_gaussians = pd.DataFrame(columns=['Iteration', 'Num Gaussians', 'Method'])
+        data_memory = pd.DataFrame(columns=['Iteration', 'Memory Used (MB)', 'Method'])
+
+        for i, method in enumerate(methods):
             train_progress = training_status.progress(0, text=f"Training {method.__name__}... (0/{iterations})")
-            # Prepare columns for two altair charts
-            col1, col2 = s2.columns(2)
-            placeholder_gaussians = col1.empty()
-            placeholder_memory = col2.empty()
-            data_gaussians = pd.DataFrame(columns=['Iteration', 'Num Gaussians'])
-            data_memory = pd.DataFrame(columns=['Iteration', 'Memory Used (MB)'])
-
+            
             # Define callback for updating charts, passed to trainers
             def update_charts(iteration, num_gaussians, memory_used):
+
                 train_progress.progress(iteration / iterations, text=f"Training {method.__name__}...  Model: {i + 1}/{len(methods)}, Iteration: {iteration}/{iterations}")
-                if iteration % 10 != 0:
+                if iteration % 2 != 0:
                     return
+                
                 nonlocal data_gaussians, data_memory
+
                 # Append new data
-                new_data_gaussians = {'Iteration': iteration, 'Num Gaussians': num_gaussians}
-                new_data_memory = {'Iteration': iteration, 'Memory Used (MB)': memory_used}
+                new_data_gaussians = {'Iteration': iteration, 'Num Gaussians': num_gaussians, 'Method': method.__name__}
+                new_data_memory = {'Iteration': iteration, 'Memory Used (MB)': memory_used, 'Method': method.__name__}
                 data_gaussians = pd.concat([data_gaussians, pd.DataFrame(new_data_gaussians, index=[0])], ignore_index=True)
                 data_memory = pd.concat([data_memory, pd.DataFrame(new_data_memory, index=[0])], ignore_index=True)
+
                 # Create Altair charts
-                chart_gaussians = alt.Chart(data_gaussians).mark_line().encode(x='Iteration', y='Num Gaussians')
-                chart_memory = alt.Chart(data_memory).mark_line().encode(x='Iteration', y='Memory Used (MB)')
+                chart_gaussians = alt.Chart(data_gaussians).mark_line().encode(x='Iteration', y='Num Gaussians', color='Method')
+                chart_memory = alt.Chart(data_memory).mark_line().encode(x='Iteration', y='Memory Used (MB)', color='Method')
 
                 # Update the placeholders with new charts
                 placeholder_gaussians.altair_chart(chart_gaussians, use_container_width=True)
                 placeholder_memory.altair_chart(chart_memory, use_container_width=True)
             
-            with tab:
-                trainer: BaseTrainer = method(update_charts)
-                models[method.__name__] = trainer.train(task, scene)
+            trainer: BaseTrainer = method(update_charts) # Create trainer with callback
+            models[method.__name__] = trainer.train(task, scene)
             
         training_status.success("Training complete!")
 
@@ -92,7 +94,7 @@ def train_models(path, iterations, methods=[SimpleTrainer]):
     return None, None, None
 
 def main():
-    st.set_page_config(page_title="Gaussian Splatting Training Visualization", page_icon="📷")
+    st.set_page_config(page_title="Gaussian Splatting Training Visualization", page_icon="📷", layout="wide")
     st.title("📷 Gaussian Splatting Training Visualization")
 
     data = get_source_path()
@@ -100,7 +102,7 @@ def main():
     # Only proceed with training if the path is not None (i.e., the button has been pressed)
     if data:
         path, iterations = data
-        task, scene, models = train_models(path, iterations, [SimpleTrainer, GridTrainer])
+        task, scene, models = train_models(path, iterations, [GridTrainer])
         # eval_models(task, scene, models)
 
 if __name__ == "__main__":

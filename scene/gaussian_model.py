@@ -9,6 +9,7 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+import gc
 import torch
 import numpy as np
 from arguments import PipelineParams
@@ -70,6 +71,38 @@ class GaussianModel:
         # PROFILING
         self.iteration = 0
         self.stats = [] # For logging iterations and number of points
+
+    # def to_device(self, device):
+    #     self._xyz = self._xyz.to(device).clone().detach().requires_grad_(self._xyz.requires_grad)
+    #     self._features_dc = self._features_dc.to(device).clone().detach().requires_grad_(self._features_dc.requires_grad)
+    #     self._features_rest = self._features_rest.to(device).clone().detach().requires_grad_(self._features_rest.requires_grad)
+    #     self._scaling = self._scaling.to(device).clone().detach().requires_grad_(self._scaling.requires_grad)
+    #     self._rotation = self._rotation.to(device).clone().detach().requires_grad_(self._rotation.requires_grad)
+    #     self._opacity = self._opacity.to(device).clone().detach().requires_grad_(self._opacity.requires_grad)
+    #     self.max_radii2D = self.max_radii2D.to(device).clone().detach().requires_grad_(self.max_radii2D.requires_grad)
+    #     self.xyz_gradient_accum = self.xyz_gradient_accum.to(device).clone().detach().requires_grad_(self.xyz_gradient_accum.requires_grad)
+    #     self.denom = self.denom.to(device).clone().detach().requires_grad_(self.denom.requires_grad)
+    #     torch.cuda.empty_cache()
+    #     gc.collect()
+        
+    def to_device(self, device):
+        self._xyz = self._xyz.to(device)
+        self._features_dc = self._features_dc.to(device)
+        self._features_rest = self._features_rest.to(device)
+        self._scaling = self._scaling.to(device)
+        self._rotation = self._rotation.to(device)
+        self._opacity = self._opacity.to(device)
+        self.max_radii2D = self.max_radii2D.to(device)
+        self.xyz_gradient_accum = self.xyz_gradient_accum.to(device)
+        self.denom = self.denom.to(device)
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    def to_cuda(self):
+        self.to_device("cuda")
+
+    def to_cpu(self):
+        self.to_device("cpu")
 
     def capture(self):
         return (
@@ -425,7 +458,6 @@ class GaussianModel:
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
-        print("Densifying and pruning...")
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -503,7 +535,7 @@ class GaussianModel:
 
             return occupied_grids
         
-    def split_to_grid(self, side_length=10.):
+    def split_to_grid(self, side_length=10., to_device=None):
         occupied_grids = self.calculate_occupied_grids(side_length)
         sub_models = []
 
@@ -533,6 +565,8 @@ class GaussianModel:
                 # Copy other necessary properties and setup functions
                 sub_model.setup_functions()
                 # Add to the list of sub-models
+                if to_device:
+                    sub_model.to_device(to_device)
                 sub_models.append(sub_model)
 
         return sub_models
