@@ -27,23 +27,6 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 
 class GaussianModel:
 
-    def setup_functions(self):
-        def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
-            L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-            actual_covariance = L @ L.transpose(1, 2)
-            symm = strip_symmetric(actual_covariance)
-            return symm
-        
-        self.scaling_activation = torch.exp
-        self.scaling_inverse_activation = torch.log
-
-        self.covariance_activation = build_covariance_from_scaling_rotation
-
-        self.opacity_activation = torch.sigmoid
-        self.inverse_opacity_activation = inverse_sigmoid
-
-        self.rotation_activation = torch.nn.functional.normalize
-
     def __init__(self, sh_degree : int):
         '''
         Initializes the Gaussian model's tensors
@@ -66,24 +49,6 @@ class GaussianModel:
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
-        self.setup_functions()
-
-        # PROFILING
-        self.iteration = 0
-        self.stats = [] # For logging iterations and number of points
-
-    # def to_device(self, device):
-    #     self._xyz = self._xyz.to(device).clone().detach().requires_grad_(self._xyz.requires_grad)
-    #     self._features_dc = self._features_dc.to(device).clone().detach().requires_grad_(self._features_dc.requires_grad)
-    #     self._features_rest = self._features_rest.to(device).clone().detach().requires_grad_(self._features_rest.requires_grad)
-    #     self._scaling = self._scaling.to(device).clone().detach().requires_grad_(self._scaling.requires_grad)
-    #     self._rotation = self._rotation.to(device).clone().detach().requires_grad_(self._rotation.requires_grad)
-    #     self._opacity = self._opacity.to(device).clone().detach().requires_grad_(self._opacity.requires_grad)
-    #     self.max_radii2D = self.max_radii2D.to(device).clone().detach().requires_grad_(self.max_radii2D.requires_grad)
-    #     self.xyz_gradient_accum = self.xyz_gradient_accum.to(device).clone().detach().requires_grad_(self.xyz_gradient_accum.requires_grad)
-    #     self.denom = self.denom.to(device).clone().detach().requires_grad_(self.denom.requires_grad)
-    #     torch.cuda.empty_cache()
-    #     gc.collect()
         
     def to_device(self, device):
         self._xyz = self._xyz.to(device)
@@ -134,38 +99,4 @@ class GaussianModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def training_setup(self, training_args):
-        self.percent_dense = training_args.percent_dense
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-
-        l = [
-            {'params': [self._xyz], 'lr': training_args.position_lr_init * self.spatial_lr_scale, "name": "xyz"},
-            {'params': [self._features_dc], 'lr': training_args.feature_lr, "name": "f_dc"},
-            {'params': [self._features_rest], 'lr': training_args.feature_lr / 20.0, "name": "f_rest"},
-            {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
-            {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
-            {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"}
-        ]
-
-        self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
-        self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
-                                                    lr_final=training_args.position_lr_final*self.spatial_lr_scale,
-                                                    lr_delay_mult=training_args.position_lr_delay_mult,
-                                                    max_steps=training_args.position_lr_max_steps)
-
-        optimizable_tensors = {}
-        for group in self.optimizer.param_groups:
-            stored_state = self.optimizer.state.get(group['params'][0], None)
-            if stored_state is not None:
-                stored_state["exp_avg"] = stored_state["exp_avg"][mask]
-                stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
-
-                del self.optimizer.state[group['params'][0]]
-                group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
-                self.optimizer.state[group['params'][0]] = stored_state
-
-                optimizable_tensors[group["name"]] = group["params"][0]
-            else:
-                group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
-                optimizable_tensors[group["name"]] = group["params"][0]
-        return optimizable_tensors
+        pass
