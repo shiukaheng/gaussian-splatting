@@ -12,22 +12,29 @@ from typing import Callable
 
 # Most basic trainer that wraps the original implementation to implement the base signature.
 class GridTrainer(BaseTrainer):
+
+    def iteration_callback(self, iteration, num_gaussians, memory):
+        self.last_recorded_iteration = iteration
+        self.num_gaussians_per_model[self.active_model] = num_gaussians
+        total_num_gaussians = sum(self.num_gaussians_per_model)
+        if self._iteration_callback:
+            self._iteration_callback(int((iteration + self.iteration_offset) / self.num_models), total_num_gaussians, memory)
     
     def __init__(self, iteration_callback: Callable[[int, int, int], None] = None):
-        super().__init__(iteration_callback)
+        super().__init__(self.iteration_callback)
         self._iteration_callback = iteration_callback
         self.simple_trainer = SimpleTrainer(self.iteration_callback)
+
+        # Below is just all hacks to wrap simple trainer to properly report iterations and number of gaussians.
         self.iteration_offset = 0
         self.last_recorded_iteration = 0
         self.num_models = 1
-        
-    def iteration_callback(self, iteration, num_gaussians, memory):
-        self.last_recorded_iteration = iteration
-        if self._iteration_callback:
-            self._iteration_callback(int((iteration + self.iteration_offset) / self.num_models), num_gaussians, memory)
+        self.num_gaussians_per_model = []
+        self.active_model = 0
 
+    # For progress reporting only
     def record_offset(self):
-        self.iteration_offset = self.last_recorded_iteration
+        self.iteration_offset += self.last_recorded_iteration
 
     def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
 
@@ -52,13 +59,16 @@ class GridTrainer(BaseTrainer):
 
         print("Training split gaussians...")
 
-        for gaussians in tqdm(split_gaussians):
+        self.num_gaussians_per_model = [len(gaussians) for gaussians in split_gaussians]
 
+        for i, gaussians in enumerate(split_gaussians):
+            torch.cuda.empty_cache()
+            self.active_model = i
             gaussians.training_setup(task)
             _, trained_gaussians = self.simple_trainer.train(task, scene, gaussians)
             trained_split_gaussians.append(trained_gaussians)
-
             self.record_offset()
+            torch.cuda.empty_cache()
 
         print("Combining gaussians...")
 

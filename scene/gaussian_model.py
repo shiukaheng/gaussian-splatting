@@ -425,6 +425,7 @@ class GaussianModel:
         self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation)
 
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
+        print("Densifying and pruning...")
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
@@ -465,6 +466,9 @@ class GaussianModel:
             "num_points": self.get_xyz.shape[0],
             "memory": torch.cuda.memory_allocated() / 1024 / 1024 # in MB
         }
+
+    def __len__(self):
+        return self.get_xyz.shape[0]
 
     def append_stats(self):
         self.stats.append(self.get_stats())

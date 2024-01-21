@@ -35,7 +35,7 @@ def get_source_path():
 def train_models(path, iterations, methods=[SimpleTrainer]):
 
     c = st.container()
-    task = Task(source_path=path, iterations=iterations, data_device='cpu')
+    task = Task(source_path=path, iterations=iterations, data_device='cpu', densification_interval=10, densify_from_iter=0)
     with c.status("Dataset", expanded=True):
         bar = st.progress(0, text="Loading images...")
         scene = task.load_scene(on_load_progress=lambda cur, max: bar.progress(cur / max, text=f"Loading images... ({cur}/{max})"))

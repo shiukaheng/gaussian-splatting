@@ -13,6 +13,7 @@ from typing import Callable
 class SimpleTrainer(BaseTrainer):
     
     def __init__(self, iteration_callback: Callable[[int, int, int], None] = None):
+        print(iteration_callback)
         super().__init__(iteration_callback)
 
     def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
@@ -27,7 +28,7 @@ class SimpleTrainer(BaseTrainer):
 
         viewpoint_stack = None
 
-        for iteration in tqdm(range(1, task.iterations + 1)):
+        for iteration in range(1, task.iterations + 1):
 
             torch.cuda.empty_cache()
 
