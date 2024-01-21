@@ -19,7 +19,7 @@ class BaseTrainer(ABC):
         self.iteration_callback = iteration_callback
 
     @abstractmethod
-    def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
+    def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None) -> [Scene, GaussianModel]:
         """
         Train the model. This method should be implemented in subclasses.
 
@@ -28,4 +28,3 @@ class BaseTrainer(ABC):
         scene (Scene): The scene to be used for training. Contains camera parameters and images. If None, load from task parameters.
         gaussian_model (GaussianModel): The initial gaussian model. If None, gaussian_model will be created from the source.
         """
-        pass

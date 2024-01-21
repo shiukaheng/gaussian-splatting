@@ -98,11 +98,35 @@ class GaussianModel:
         torch.cuda.empty_cache()
         gc.collect()
 
-    def to_cuda(self):
-        self.to_device("cuda")
+    def unarchive_to_cuda(self, training_args):
+        # Training args needed to setup the optimizer
+        self._xyz = nn.Parameter(self._xyz.cuda().requires_grad_(True))
+        self._features_dc = nn.Parameter(self._features_dc.cuda().requires_grad_(True))
+        self._features_rest = nn.Parameter(self._features_rest.cuda().requires_grad_(True))
+        self._scaling = nn.Parameter(self._scaling.cuda().requires_grad_(True))
+        self._rotation = nn.Parameter(self._rotation.cuda().requires_grad_(True))
+        self._opacity = nn.Parameter(self._opacity.cuda().requires_grad_(True))
+        self.max_radii2D = self.max_radii2D.cuda()
+        self.xyz_gradient_accum = self.xyz_gradient_accum.cuda()
+        self.denom = self.denom.cuda()
+        torch.cuda.empty_cache()
+        gc.collect()
+        self.training_setup(training_args)
 
-    def to_cpu(self):
-        self.to_device("cpu")
+    def archive_to_cpu(self):
+        self._xyz = self._xyz.detach().cpu()
+        self._features_dc = self._features_dc.detach().cpu()
+        self._features_rest = self._features_rest.detach().cpu()
+        self._scaling = self._scaling.detach().cpu()
+        self._rotation = self._rotation.detach().cpu()
+        self._opacity = self._opacity.detach().cpu()
+        self.max_radii2D = self.max_radii2D.detach().cpu()
+        self.xyz_gradient_accum = self.xyz_gradient_accum.detach().cpu()
+        self.denom = self.denom.detach().cpu()
+        torch.cuda.empty_cache()
+        gc.collect()
+        del self.optimizer
+        self.optimizer = None
 
     def capture(self):
         return (
@@ -185,14 +209,15 @@ class GaussianModel:
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
 
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
-        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True))
-        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_dc = nn.Parameter(features[:,:,0:1].transpose(1, 2).contiguous().requires_grad_(True)) # Might be SH degree 0
+        self._features_rest = nn.Parameter(features[:,:,1:].transpose(1, 2).contiguous().requires_grad_(True)) # And the rest SH degrees?
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
     def training_setup(self, training_args):
+
         self.percent_dense = training_args.percent_dense
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -207,6 +232,7 @@ class GaussianModel:
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
+
         self.xyz_scheduler_args = get_expon_lr_func(lr_init=training_args.position_lr_init*self.spatial_lr_scale,
                                                     lr_final=training_args.position_lr_final*self.spatial_lr_scale,
                                                     lr_delay_mult=training_args.position_lr_delay_mult,
@@ -535,7 +561,7 @@ class GaussianModel:
 
             return occupied_grids
         
-    def split_to_grid(self, side_length=10., to_device=None):
+    def split_to_grid(self, side_length=10., archive_to_cpu=False):
         occupied_grids = self.calculate_occupied_grids(side_length)
         sub_models = []
 
@@ -565,8 +591,8 @@ class GaussianModel:
                 # Copy other necessary properties and setup functions
                 sub_model.setup_functions()
                 # Add to the list of sub-models
-                if to_device:
-                    sub_model.to_device(to_device)
+                if archive_to_cpu:
+                    sub_model.archive_to_cpu()
                 sub_models.append(sub_model)
 
         return sub_models

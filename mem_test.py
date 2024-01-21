@@ -1,4 +1,5 @@
 import torch
+from gaussian_renderer import render
 
 # Profile CUDA memory usage
 print(f'Initial without evaluators: {torch.cuda.memory_allocated(device=None)}')
@@ -12,33 +13,9 @@ task = Task(source_path="./datasets/train", iterations=200, data_device='cpu', d
 
 scene = task.load_scene()
 
-# Profile CUDA memory usage
-print(f'Scene loaded: {torch.cuda.memory_allocated(device=None)}')
-
 gaussian_model = scene.create_gaussians()
 
-# Profile CUDA memory usage
-print(f'Gaussian model created: {torch.cuda.memory_allocated(device=None)}')
+gaussian_model.archive_to_cpu()
+gaussian_model.unarchive_to_cuda(task)
 
-# Move to CPU
-gaussian_model.to_cpu()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CPU: {torch.cuda.memory_allocated(device=None)}')
-
-# Move to CUDA
-gaussian_model.to_cuda()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CUDA: {torch.cuda.memory_allocated(device=None)}')
-# Move to CPU
-gaussian_model.to_cpu()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CPU: {torch.cuda.memory_allocated(device=None)}')
-
-# Move to CUDA
-gaussian_model.to_cuda()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CUDA: {torch.cuda.memory_allocated(device=None)}')
+render(scene.getTrainCameras()[0], gaussian_model, task)

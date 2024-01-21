@@ -50,8 +50,8 @@ class GridTrainer(BaseTrainer):
 
         print("Splitting gaussian model...")
 
-        split_gaussians: List[GaussianModel] = gaussian_model.split_to_grid(100, to_device='cpu')
-        gaussian_model.to_cpu()
+        split_gaussians: List[GaussianModel] = gaussian_model.split_to_grid(100)
+        gaussian_model.archive_to_cpu()
 
         print(f"Split into {len(split_gaussians)} gaussians.")
         self.num_models = len(split_gaussians)
@@ -64,15 +64,12 @@ class GridTrainer(BaseTrainer):
 
         for i, gaussians in enumerate(split_gaussians):
             torch.cuda.empty_cache()
-            gaussians.to_cuda()
+            gaussians.unarchive_to_cuda(task)
             self.active_model = i
             gaussians.training_setup(task)
             _, trained_gaussians = self.simple_trainer.train(task, scene, gaussians)
             # Print memory usage
-            print(f"Memory usage: {torch.cuda.memory_allocated() / 1024 / 1024} MB")
-            print(f'Gaussians: {len(trained_gaussians)}')
-            trained_gaussians.to_cpu()
-            print(f"Memory usage: {torch.cuda.memory_allocated() / 1024 / 1024} MB")
+            trained_gaussians.archive_to_cpu()
             trained_split_gaussians.append(trained_gaussians)
             self.record_offset()
             torch.cuda.empty_cache()
@@ -80,7 +77,7 @@ class GridTrainer(BaseTrainer):
         print("Combining gaussians...")
 
         combined = GaussianModel(task.sh_degree)
-        combined.to_cpu()
+        combined.archive_to_cpu()
         combined.append_multiple(trained_split_gaussians)
 
         print("Done.")
