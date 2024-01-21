@@ -103,7 +103,7 @@ class Scene:
     def create_gaussians_from_source(self):
         gaussian_model = GaussianModel(self.args.sh_degree)
         gaussian_model.create_from_pcd(self.scene_info.point_cloud, self.cameras_extent)
-        gaussian_model.training_setup(self.args)
+        # gaussian_model.training_setup(self.args)
         return gaussian_model
 
     def create_gaussians(self):
@@ -113,7 +113,7 @@ class Scene:
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
                                                            "point_cloud.ply"))
-            gaussian_model.training_setup(self.args)
+            # gaussian_model.training_setup(self.args)
             return gaussian_model
         else:
             return self.create_gaussians_from_source()

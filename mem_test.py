@@ -31,14 +31,3 @@ gaussian_model.to_cuda()
 
 # Profile CUDA memory usage
 print(f'Gaussian model moved to CUDA: {torch.cuda.memory_allocated(device=None)}')
-# Move to CPU
-gaussian_model.to_cpu()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CPU: {torch.cuda.memory_allocated(device=None)}')
-
-# Move to CUDA
-gaussian_model.to_cuda()
-
-# Profile CUDA memory usage
-print(f'Gaussian model moved to CUDA: {torch.cuda.memory_allocated(device=None)}')
