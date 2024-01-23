@@ -27,6 +27,8 @@ def init(wish_host, wish_port):
     global host, port, listener
     host = wish_host
     port = wish_port
+    print((host, port))
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind((host, port))
     listener.listen()
     listener.settimeout(0)
@@ -84,3 +86,8 @@ def receive():
         return custom_cam, do_training, do_shs_python, do_rot_scale_python, keep_alive, scaling_modifier
     else:
         return None, None, None, None, None, None
+    
+def close():
+    global conn
+    print("Closing connection...")
+    conn.close()

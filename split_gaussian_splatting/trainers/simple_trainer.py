@@ -1,6 +1,6 @@
 from random import randint
 import torch
-from gaussian_renderer import render
+from gaussian_renderer import network_gui, render
 from scene.gaussian_model import GaussianModel
 from split_gaussian_splatting.scene import Scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
@@ -29,6 +29,8 @@ class SimpleTrainer(BaseTrainer):
         viewpoint_stack = None
 
         for iteration in range(1, task.iterations + 1):
+
+            self.update_network_viewer(task, gaussian_model, bg, iteration)
 
             torch.cuda.empty_cache()
 
@@ -75,6 +77,22 @@ class SimpleTrainer(BaseTrainer):
             torch.cuda.empty_cache()
 
         return scene, gaussian_model
+
+    def update_network_viewer(self, task, gaussian_model, bg, iteration):
+        if network_gui.conn == None: # If no GUI connection, we just train
+            network_gui.try_connect()
+        while network_gui.conn != None:
+            try:
+                net_image_bytes = None
+                custom_cam, do_training, task.convert_SHs_python, task.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+                if custom_cam != None:
+                    net_image = render(custom_cam, gaussian_model, task, bg, scaling_modifer)["render"]
+                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+                network_gui.send(net_image_bytes, task.source_path)
+                if do_training and ((iteration < int(task.iterations)) or not keep_alive):
+                    break
+            except Exception as e:
+                network_gui.conn = None
 
     def create_bg(self, task):
         bg_color = [1, 1, 1] if task.white_background else [0, 0, 0]

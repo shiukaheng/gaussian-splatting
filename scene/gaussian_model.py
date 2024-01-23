@@ -10,6 +10,7 @@
 #
 
 import gc
+from typing import List, Tuple
 import torch
 import numpy as np
 from arguments import PipelineParams
@@ -561,9 +562,19 @@ class GaussianModel:
 
             return occupied_grids
         
-    def split_to_grid(self, side_length=10., archive_to_cpu=False):
+    def split_to_grid(self, side_length: float = 10., archive_to_cpu: bool = False) -> List[Tuple['GaussianModel', Tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        Splits the GaussianModel into sub-models based on a grid.
+
+        Args:
+            side_length (float): The length of each side of the grid cell. Default is 10.
+            archive_to_cpu (bool): Whether to archive the sub-models to CPU. Default is False.
+
+        Returns:
+            List[Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]]: A list of tuples, where each tuple contains a sub-model and the corresponding grid cell boundaries.
+        """
         occupied_grids = self.calculate_occupied_grids(side_length)
-        sub_models = []
+        sub_models: List[Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]] = []
 
         for grid_min, grid_max in occupied_grids:
             grid_min = grid_min.cuda()
@@ -593,9 +604,25 @@ class GaussianModel:
                 # Add to the list of sub-models
                 if archive_to_cpu:
                     sub_model.archive_to_cpu()
-                sub_models.append(sub_model)
+                sub_models.append((sub_model, (grid_min, grid_max)))
 
         return sub_models
+    
+    def cull_outside_box(self, box_min: torch.Tensor, box_max: torch.Tensor):
+        """
+        Culls points outside a box.
+
+        Args:
+            box_min (torch.Tensor): The minimum point of the box.
+            box_max (torch.Tensor): The maximum point of the box.
+        """
+        # Determine points within this box
+        in_box = (self._xyz >= box_min) & (self._xyz < box_max)
+        in_box_mask = in_box.all(dim=1)
+
+        if in_box_mask.any():
+            # Cull points outside the box
+            self.prune_points(~in_box_mask)
     
     def append(self, other_model):
         """
