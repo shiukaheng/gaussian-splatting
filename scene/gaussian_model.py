@@ -623,6 +623,11 @@ class GaussianModel:
         if in_box_mask.any():
             # Cull points outside the box
             self.prune_points(~in_box_mask)
+
+    def render_block_mask(self, camera: Camera, block_mask: torch.Tensor):
+        raise NotImplementedError
+        # Essentially, clone the model, color what's in the block white, and otherwise black. Background is black.
+        # Not sure if opacity should all be set to 1 or not. Probably not.
     
     def append(self, other_model):
         """

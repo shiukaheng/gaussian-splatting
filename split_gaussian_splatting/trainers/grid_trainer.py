@@ -53,7 +53,7 @@ class GridTrainer(BaseTrainer):
 
         print("Splitting gaussian model...")
 
-        split_gaussians: List[GaussianModel] = gaussian_model.split_to_grid(100000)
+        split_gaussians = gaussian_model.split_to_grid(100000)
         gaussian_model.archive_to_cpu()
 
         print(f"Split into {len(split_gaussians)} gaussians.")
@@ -63,7 +63,7 @@ class GridTrainer(BaseTrainer):
 
         print("Training split gaussians...")
 
-        self.num_gaussians_per_model = [len(gaussians) for gaussians in split_gaussians]
+        self.num_gaussians_per_model = [len(gaussians[0]) for gaussians in split_gaussians]
 
         gaussian_visibility = {} # dict: gaussian_model -> camera -> number of visible gaussians
 
@@ -72,7 +72,7 @@ class GridTrainer(BaseTrainer):
         # Precompute visibility of each gaussian per camera. Bad complexity, but we can optimize later.
         print("Precomputing visibility...")
         with torch.no_grad():
-            for i_gaussian, gaussians in enumerate(split_gaussians):
+            for i_gaussian, (gaussians, (model_min, model_max)) in enumerate(split_gaussians):
                 gaussian_visibility[i_gaussian] = {}
                 torch.cuda.empty_cache()
                 gaussians.unarchive_to_cuda(task)
@@ -88,7 +88,7 @@ class GridTrainer(BaseTrainer):
         min_points = 50
 
         print("Training gaussians...")
-        for i, gaussians in enumerate(split_gaussians):
+        for i, (gaussians, (model_min, model_max)) in enumerate(split_gaussians):
 
             torch.cuda.empty_cache()
             gaussians.unarchive_to_cuda(task)
@@ -101,6 +101,7 @@ class GridTrainer(BaseTrainer):
                 print("No cameras visible, skipping...")
                 continue
             trained_gaussians = self.train_loop(task, scene, cameras, gaussians)
+            trained_gaussians.cull_outside_box(model_min, model_max) # Cull gaussians outside of grid cell
             # Print memory usage
             trained_gaussians.archive_to_cpu()
             trained_split_gaussians.append(trained_gaussians)
