@@ -42,27 +42,26 @@ class GridTrainer(BaseTrainer):
     def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
 
         print("Loading scene...")
-
         if not scene:
             scene = task.load_scene()
 
         print("Creating gaussian model...")
-
         if not gaussian_model:
             gaussian_model = scene.create_gaussians()
 
-        print("Splitting gaussian model...")
+        # Pre-train gaussians without densification
+        print("Pre-training gaussians...")
+        raise NotImplementedError("Pre-training not implemented.")
 
+        print("Splitting gaussian model...")
         split_gaussians = gaussian_model.split_to_grid(100000)
         gaussian_model.archive_to_cpu()
 
         print(f"Split into {len(split_gaussians)} gaussians.")
         self.num_models = len(split_gaussians)
-
         trained_split_gaussians = []
 
         print("Training split gaussians...")
-
         self.num_gaussians_per_model = [len(gaussians[0]) for gaussians in split_gaussians]
 
         gaussian_visibility = {} # dict: gaussian_model -> camera -> number of visible gaussians
