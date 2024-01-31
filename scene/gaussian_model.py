@@ -14,9 +14,9 @@ import json
 from typing import List, Tuple
 import torch
 import numpy as np
-from arguments import PipelineParams
 from gaussian_renderer import render
 from scene.cameras import Camera
+from sgs2.helpers import PipelineParams
 from utils.camera_utils import camera_to_JSON
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
