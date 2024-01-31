@@ -22,7 +22,7 @@ class SimpleTrainer(BaseTrainer):
             scene = train_params.load_scene()
 
         if not gaussian_model:
-            gaussian_model = scene.create_gaussians()
+            gaussian_model = scene.create_gaussians(train_params)
 
         bg = self.create_bg(train_params)
 

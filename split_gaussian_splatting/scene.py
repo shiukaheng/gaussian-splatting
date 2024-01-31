@@ -12,8 +12,10 @@
 import os
 import random
 import json
-from typing import Callable
-from split_gaussian_splatting.training_task import ProjectParams
+from typing import Callable, TYPE_CHECKING
+if TYPE_CHECKING:
+    from split_gaussian_splatting.training_task import ProjectParams
+    from split_gaussian_splatting.training_task import SimpleTrainerParams
 from utils.system_utils import searchForMaxIteration
 from scene.dataset_readers import SceneInfo, sceneLoadTypeCallbacks
 from arguments import ModelParams
@@ -23,7 +25,7 @@ from scene.gaussian_model import GaussianModel
 
 class Scene:
 
-    def __init__(self, args : ProjectParams, shuffle=True, resolution_scales=[1.0], train_cam_limit = None, on_load_progress: Callable[[int, int], None] = None):
+    def __init__(self, args : 'ProjectParams', shuffle=True, resolution_scales=[1.0], train_cam_limit = None, on_load_progress: Callable[[int, int], None] = None):
 
         self.args = args # The arguments passed to the program
         self.train_cameras = {}
@@ -83,14 +85,11 @@ class Scene:
         with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
             json.dump(json_cams, file)
 
-    def create_gaussians_from_source(self):
-        gaussian_model = GaussianModel(self.args.sh_degree)
+    def create_gaussians(self, training_args: 'SimpleTrainerParams'):
+        gaussian_model = GaussianModel(sh_degree=training_args.sh_degree)
         gaussian_model.create_from_pcd(self.scene_info.point_cloud, self.cameras_extent)
-        gaussian_model.training_setup(self.args)
+        gaussian_model.training_setup(training_args)
         return gaussian_model
-
-    def create_gaussians(self):
-        return self.create_gaussians_from_source()
 
     # Get the training cameras for a given scale
     def getTrainCameras(self, scale=1.0):

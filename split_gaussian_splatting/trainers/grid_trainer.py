@@ -39,18 +39,18 @@ class GridTrainer(BaseTrainer):
 
         self.iteration_offset += self.last_recorded_iteration
 
-    def train(self, task: SimpleTrainerParams, scene: Scene = None, gaussian_model: GaussianModel = None):
+    def train(self, train_params: SimpleTrainerParams, scene: Scene = None, gaussian_model: GaussianModel = None):
 
         print("Loading scene...")
         if not scene:
-            scene = task.load_scene()
+            scene = train_params.load_scene()
 
         print("Creating gaussian model...")
         if not gaussian_model:
-            gaussian_model = scene.create_gaussians()
+            gaussian_model = scene.create_gaussians(train_params)
 
         # Pre-train gaussians without densification
-        print("Pre-training gaussians...")
+        # print("Pre-training gaussians...")
         # TODO: raise NotImplementedError("Pre-training not implemented.")
 
         print("Splitting gaussian model...")
@@ -74,10 +74,10 @@ class GridTrainer(BaseTrainer):
             for i_gaussian, (gaussians, (model_min, model_max)) in enumerate(split_gaussians):
                 gaussian_visibility[i_gaussian] = {}
                 torch.cuda.empty_cache()
-                gaussians.unarchive_to_cuda(task)
+                gaussians.unarchive_to_cuda(train_params)
                 for i_camera, camera in enumerate(all_train_cameras):
                     # TODO: Early exit if grid cell is not visible
-                    render_result = render(camera, gaussians, task)
+                    render_result = render(camera, gaussians, train_params)
                     # Count visible gaussians
                     gaussian_visibility[i_gaussian][i_camera] = torch.sum(render_result["visibility_filter"]).item()
                 gaussians.archive_to_cpu()
@@ -90,16 +90,16 @@ class GridTrainer(BaseTrainer):
         for i, (gaussians, (model_min, model_max)) in enumerate(split_gaussians):
 
             torch.cuda.empty_cache()
-            gaussians.unarchive_to_cuda(task)
+            gaussians.unarchive_to_cuda(train_params)
             self.active_model = i
-            gaussians.training_setup(task)
+            gaussians.training_setup(train_params)
             # Filter cameras by visibility
             cameras = [camera for i_camera, camera in enumerate(all_train_cameras) if gaussian_visibility[i][i_camera] >= min_points]
             print(f'Filtered cameras from {len(all_train_cameras)} to {len(cameras)}')
             if len(cameras) == 0:
                 print("No cameras visible, skipping...")
                 continue
-            trained_gaussians = self.train_loop(task, scene, cameras, gaussians)
+            trained_gaussians = self.train_loop(train_params, scene, cameras, gaussians)
             trained_gaussians.cull_outside_box(model_min, model_max) # Cull gaussians outside of grid cell
             # Print memory usage
             trained_gaussians.archive_to_cpu()
@@ -109,7 +109,7 @@ class GridTrainer(BaseTrainer):
 
         print("Combining gaussians...")
 
-        combined = GaussianModel(task.sh_degree)
+        combined = GaussianModel(train_params.sh_degree)
         combined.archive_to_cpu()
         combined.append_multiple(trained_split_gaussians)
 

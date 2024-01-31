@@ -10,7 +10,7 @@ from split_gaussian_splatting.evaluate import evaluate_scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
 from split_gaussian_splatting.trainers.grid_trainer import GridTrainer
 from split_gaussian_splatting.trainers.simple_trainer import SimpleTrainer
-from split_gaussian_splatting.training_task import SimpleTrainerParams
+from split_gaussian_splatting.training_task import ProjectParams, SimpleTrainerParams
 from PIL import Image
 from gaussian_renderer import network_gui
 
@@ -48,13 +48,14 @@ def get_source_path():
     
 def train_models(path, iterations, methods=[SimpleTrainer]):
 
-    network_gui.init("127.0.0.1", 6009)
+    # network_gui.init("127.0.0.1", 6009)
 
     c = st.container()
-    task = SimpleTrainerParams(source_path=path, iterations=iterations, data_device='cpu', densify_from_iter=0, densification_interval=50, opacity_reset_interval=300)
+    project_params = ProjectParams(source_path=path, images="images", eval=False)
+    training_params = SimpleTrainerParams(iterations=iterations, densify_from_iter=0, densification_interval=50, opacity_reset_interval=300)
     with c.status("Dataset", expanded=True):
         bar = st.progress(0, text="Loading images...")
-        scene = task.load_scene(on_load_progress=lambda cur, max: bar.progress(cur / max, text=f"Loading images... ({cur}/{max})"))
+        scene = project_params.load_scene(on_load_progress=lambda cur, max: bar.progress(cur / max, text=f"Loading images... ({cur}/{max})"))
         bar.empty()
         st.success(f"Loaded {len(list(scene.train_cameras.values())[-1] or [])} training cameras, {len(list(scene.test_cameras.values())[-1] or [])} test cameras.")
     models = {}
@@ -97,13 +98,13 @@ def train_models(path, iterations, methods=[SimpleTrainer]):
                     placeholder_memory.altair_chart(chart_memory, use_container_width=True)
             
             trainer: BaseTrainer = method(update_charts) # Create trainer with callback
-            _, gaussian = trainer.train(task, scene)
+            _, gaussian = trainer.train(training_params, scene)
             gaussian.archive_to_cpu()
             models[method.__name__] = gaussian
             
         training_status.success("Training complete!")
 
-        return task, scene, models
+        return training_params, scene, models
     
 def eval_models(task, scene, models):
     

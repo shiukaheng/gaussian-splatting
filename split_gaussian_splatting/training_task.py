@@ -1,8 +1,9 @@
 from argparse import Namespace
 import os
 import uuid
-
 from attr import dataclass
+# Type hint to prevent circular import
+from typing import TYPE_CHECKING
 from split_gaussian_splatting.scene import Scene
 
 @dataclass
@@ -10,16 +11,21 @@ class ProjectParams:
     source_path: str = ""
     images: str = "images"
     eval: bool = False
+    resolution: int = -1
+    data_device: str = "cpu" # or "cuda"
     # init_model_path: str = None
+
+    def load_scene(self, on_load_progress=None):
+        scene = Scene(self, on_load_progress=on_load_progress)
+        return scene
 
 @dataclass
 class SimpleTrainerParams:
     # Model parameters
     sh_degree: int = 3
     model_path: str = ""
-    resolution: int = -1
+    # resolution: int = -1
     white_background: bool = False
-    data_device: str = "cuda"
 
     # Optimization parameters
     iterations: int = 30_000
@@ -45,39 +51,35 @@ class SimpleTrainerParams:
     compute_cov3D_python: bool = False
     debug: bool = False
 
-    def load_scene(self, on_load_progress=None):
-        scene = Scene(self, on_load_progress=on_load_progress)
-        return scene
-
-    def export_training_namespace(self):
-        # Selectively create a dictionary of only model parameters
-        model_params = {
-            'sh_degree': self.sh_degree,
-            'source_path': self.source_path,
-            'model_path': self.model_path,
-            'images': self.images,
-            'resolution': self.resolution,
-            'white_background': self.white_background,
-            'data_device': self.data_device,
-            'eval': self.eval
-        }
+    # def export_training_namespace(self, project_params: 'ProjectParams'):
+    #     # Selectively create a dictionary of only model parameters
+    #     model_params = {
+    #         'sh_degree': self.sh_degree,
+    #         'source_path': project_params.source_path,
+    #         'model_path': self.model_path,
+    #         'images': project_params.images,
+    #         'resolution': self.resolution,
+    #         'white_background': self.white_background,
+    #         'data_device': self.data_device,
+    #         'eval': project_params.eval
+    #     }
         
-        # Convert the dictionary to a Namespace object
-        namespace = Namespace(**model_params)
+    #     # Convert the dictionary to a Namespace object
+    #     namespace = Namespace(**model_params)
         
-        return namespace
+    #     return namespace
     
-    def create_output_folder(self) -> str:
-        if not self.model_path:
-            if os.getenv('OAR_JOB_ID'):
-                unique_str=os.getenv('OAR_JOB_ID')
-            else:
-                unique_str = str(uuid.uuid4())
-            self.model_path = os.path.join("./output/", unique_str[0:10])
+    # def create_output_folder(self) -> str:
+    #     if not self.model_path:
+    #         if os.getenv('OAR_JOB_ID'):
+    #             unique_str=os.getenv('OAR_JOB_ID')
+    #         else:
+    #             unique_str = str(uuid.uuid4())
+    #         self.model_path = os.path.join("./output/", unique_str[0:10])
             
-        # Set up output folder
-        print("Output folder: {}".format(self.model_path))
-        os.makedirs(self.model_path, exist_ok = True)
-        with open(os.path.join(self.model_path, "cfg_args"), 'w') as cfg_log_f:
-            cfg_log_f.write(str(self.export_training_namespace()))
-        return self.model_path
+    #     # Set up output folder
+    #     print("Output folder: {}".format(self.model_path))
+    #     os.makedirs(self.model_path, exist_ok = True)
+    #     with open(os.path.join(self.model_path, "cfg_args"), 'w') as cfg_log_f:
+    #         cfg_log_f.write(str(self.export_training_namespace()))
+    #     return self.model_path
