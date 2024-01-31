@@ -41,6 +41,7 @@ class GaussianModel:
     spatial_lr_scale: float = 0.0
     position_lr_delay_mult: float = 0.01
     position_lr_max_steps: int = 30_000
+    pipeline_params: PipelineParams = None
 
     @staticmethod
     def from_scene(scene):
@@ -73,6 +74,9 @@ class GaussianModel:
         self.spatial_lr_scale = 0
         self.setup_functions()
         self.iteration = 0
+
+        if self.pipeline_params is None:
+            self.pipeline_params = PipelineParams()
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
@@ -491,8 +495,7 @@ class GaussianModel:
     def get_camera_visbility_mask(self, camera: Camera):
         with torch.no_grad():
             # Alternatively, we could do another implementation for CPU, but now its not required yet.
-            pp = PipelineParams()
-            render_pkg = render(camera, self, pp, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
+            render_pkg = render(camera, self, self.pipeline_params, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
             return render_pkg["visibility_filter"]
     
     def calculate_bounding_box(self):
@@ -634,3 +637,16 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         # Add length of gradient, gets first two components of gradient (x,y) in VIEW space. Z (depth) may be irrelevant.
         self.denom[update_filter] += 1 # Add 1 to denominator for each point, so we can average the gradient later
+
+    def render(self, camera: Camera, pipeline_params: PipelineParams):
+        """
+        Renders the model from the given camera.
+
+        Parameters:
+        camera (Camera): The camera to render the model from.
+        pipeline_params (PipelineParams): The parameters to use for rendering.
+
+        Returns:
+        dict: A dictionary containing the rendered image, the depth map, the normal map, and the visibility filter.
+        """
+        return render(camera, self, pipeline_params, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))

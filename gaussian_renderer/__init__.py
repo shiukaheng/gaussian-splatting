@@ -14,7 +14,7 @@ import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from scene.gaussian_model import GaussianModel
+    from sgs2.gaussian import GaussianModel
 from utils.sh_utils import eval_sh
 
 def render(viewpoint_camera, pc : 'GaussianModel', pipe, bg_color : torch.Tensor = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda"), scaling_modifier = 1.0, override_color = None):
