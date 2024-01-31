@@ -10,7 +10,7 @@ from split_gaussian_splatting.evaluate import evaluate_scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
 from split_gaussian_splatting.trainers.grid_trainer import GridTrainer
 from split_gaussian_splatting.trainers.simple_trainer import SimpleTrainer
-from split_gaussian_splatting.training_task import Task
+from split_gaussian_splatting.training_task import SimpleTrainerParams
 from PIL import Image
 from gaussian_renderer import network_gui
 
@@ -51,21 +51,12 @@ def train_models(path, iterations, methods=[SimpleTrainer]):
     network_gui.init("127.0.0.1", 6009)
 
     c = st.container()
-    task = Task(source_path=path, iterations=iterations, data_device='cpu', densify_from_iter=0, densification_interval=50, opacity_reset_interval=300)
+    task = SimpleTrainerParams(source_path=path, iterations=iterations, data_device='cpu', densify_from_iter=0, densification_interval=50, opacity_reset_interval=300)
     with c.status("Dataset", expanded=True):
         bar = st.progress(0, text="Loading images...")
         scene = task.load_scene(on_load_progress=lambda cur, max: bar.progress(cur / max, text=f"Loading images... ({cur}/{max})"))
-        # Animate remove progress bar and switch to "Loaded cameras."
         bar.empty()
         st.success(f"Loaded {len(list(scene.train_cameras.values())[-1] or [])} training cameras, {len(list(scene.test_cameras.values())[-1] or [])} test cameras.")
-    
-        # # For the first 5 images, we plot it out
-        # training_cameras: List[Camera] = scene.getTrainCameras() or []
-        # test_cameras: List[Camera] = scene.getTestCameras() or []
-        # images = [camera.original_image[0:3, :, :].cpu().numpy().transpose(1, 2, 0) for camera in camera_selection]
-
-        # for image in images:
-        #     st.image(image, caption="Original image", use_column_width=True)
     models = {}
 
     s2 = c.status("Training", expanded=True)

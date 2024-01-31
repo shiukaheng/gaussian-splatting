@@ -10,12 +10,14 @@
 #
 
 import gc
+import json
 from typing import List, Tuple
 import torch
 import numpy as np
 from arguments import PipelineParams
 from gaussian_renderer import render
 from scene.cameras import Camera
+from utils.camera_utils import camera_to_JSON
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
 import os
@@ -25,25 +27,8 @@ from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
-
+from utils.system_utils import searchForMaxIteration
 class GaussianModel:
-
-    def setup_functions(self):
-        def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
-            L = build_scaling_rotation(scaling_modifier * scaling, rotation)
-            actual_covariance = L @ L.transpose(1, 2)
-            symm = strip_symmetric(actual_covariance)
-            return symm
-        
-        self.scaling_activation = torch.exp
-        self.scaling_inverse_activation = torch.log
-
-        self.covariance_activation = build_covariance_from_scaling_rotation
-
-        self.opacity_activation = torch.sigmoid
-        self.inverse_opacity_activation = inverse_sigmoid
-
-        self.rotation_activation = torch.nn.functional.normalize
 
     def __init__(self, sh_degree : int):
         '''
@@ -52,6 +37,7 @@ class GaussianModel:
         Parameters:
         sh_degree (int): The degree of the spherical harmonics used to represent the model
         '''
+
         # Added .cuda(), previously was not there
         self.active_sh_degree = 0
         self.max_sh_degree = sh_degree  
@@ -73,18 +59,42 @@ class GaussianModel:
         self.iteration = 0
         self.stats = [] # For logging iterations and number of points
 
-    # def to_device(self, device):
-    #     self._xyz = self._xyz.to(device).clone().detach().requires_grad_(self._xyz.requires_grad)
-    #     self._features_dc = self._features_dc.to(device).clone().detach().requires_grad_(self._features_dc.requires_grad)
-    #     self._features_rest = self._features_rest.to(device).clone().detach().requires_grad_(self._features_rest.requires_grad)
-    #     self._scaling = self._scaling.to(device).clone().detach().requires_grad_(self._scaling.requires_grad)
-    #     self._rotation = self._rotation.to(device).clone().detach().requires_grad_(self._rotation.requires_grad)
-    #     self._opacity = self._opacity.to(device).clone().detach().requires_grad_(self._opacity.requires_grad)
-    #     self.max_radii2D = self.max_radii2D.to(device).clone().detach().requires_grad_(self.max_radii2D.requires_grad)
-    #     self.xyz_gradient_accum = self.xyz_gradient_accum.to(device).clone().detach().requires_grad_(self.xyz_gradient_accum.requires_grad)
-    #     self.denom = self.denom.to(device).clone().detach().requires_grad_(self.denom.requires_grad)
-    #     torch.cuda.empty_cache()
-    #     gc.collect()
+    def load_from_model_path(self, path, load_iteration):
+        # If we want to load a previous iteration, we get the request iteration or the max
+        # TODO: This should be in a separate method
+        if load_iteration:
+            if load_iteration == -1:
+                self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
+            else:
+                self.loaded_iter = load_iteration
+            print("Loading ltrained model at iteration {}".format(self.loaded_iter))
+
+        # If we have a loaded iteration, we load the already converted gaussians from PLY
+        # TODO: Again, rewrite to not have to write two versions of loading logic, instead pre-convert to our internal representation
+        if self.loaded_iter:
+            self.load_ply(os.path.join(path, "point_cloud", "iteration_" + str(self.loaded_iter), "point_cloud.ply"))
+
+    # Save the gaussians to a ply file
+    def save_ply_as_iteration(self, model, iteration):
+        point_cloud_path = os.path.join(model, "point_cloud/iteration_{}".format(iteration))
+        self.save_ply(os.path.join(point_cloud_path, "point_cloud.ply"))
+
+    def setup_functions(self):
+        def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
+            L = build_scaling_rotation(scaling_modifier * scaling, rotation)
+            actual_covariance = L @ L.transpose(1, 2)
+            symm = strip_symmetric(actual_covariance)
+            return symm
+        
+        self.scaling_activation = torch.exp
+        self.scaling_inverse_activation = torch.log
+
+        self.covariance_activation = build_covariance_from_scaling_rotation
+
+        self.opacity_activation = torch.sigmoid
+        self.inverse_opacity_activation = inverse_sigmoid
+
+        self.rotation_activation = torch.nn.functional.normalize
         
     def to_device(self, device):
         self._xyz = self._xyz.to(device)
@@ -216,6 +226,9 @@ class GaussianModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+    def create_from_scene(self, scene):
+        self.create_from_pcd(scene.scene_info.point_cloud, scene.cameras_extent)
 
     def training_setup(self, training_args):
 
@@ -678,3 +691,19 @@ class GaussianModel:
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
         # Add length of gradient, gets first two components of gradient (x,y) in VIEW space. Z (depth) may be irrelevant.
         self.denom[update_filter] += 1 # Add 1 to denominator for each point, so we can average the gradient later
+
+    def init_model_dir(self, scene):
+        with open(scene.scene_info.ply_path, 'rb') as src_file, open(os.path.join(self.model_path, "input.ply") , 'wb') as dest_file:
+            dest_file.write(src_file.read()) # Copy the original ply file to a file called input.ply in the model path
+            # Create two camera lists
+            json_cams = []
+            camlist = []
+            if scene.scene_info.test_cameras: # If we have test cameras, add them to the list
+                camlist.extend(scene.scene_info.test_cameras)
+            if scene.scene_info.train_cameras: # If we have train cameras, add them to the list
+                camlist.extend(scene.scene_info.train_cameras)
+            # We now convert the cameras to JSON form, so we can save them to a file
+            for id, cam in enumerate(camlist):
+                json_cams.append(camera_to_JSON(id, cam))
+            with open(os.path.join(self.model_path, "cameras.json"), 'w') as file:
+                json.dump(json_cams, file)

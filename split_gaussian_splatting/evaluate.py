@@ -16,7 +16,7 @@ from gaussian_renderer import render
 from scene import Scene
 from scene.cameras import Camera
 from scene.gaussian_model import GaussianModel
-from split_gaussian_splatting.training_task import Task
+from split_gaussian_splatting.training_task import SimpleTrainerParams
 from utils.loss_utils import ssim
 import lpips
 from utils.image_utils import psnr
@@ -26,7 +26,7 @@ import numpy as np
 
 lpips_fn = lpips.LPIPS(net='vgg').cuda()
 
-def evaluate_camera(model: GaussianModel, task: Task, camera: Camera):
+def evaluate_camera(model: GaussianModel, task: SimpleTrainerParams, camera: Camera):
 
     bg_color = [1,1,1] if task.white_background else [0,0,0]
     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
@@ -44,7 +44,7 @@ def evaluate_camera(model: GaussianModel, task: Task, camera: Camera):
     return s, p, l, PIL.Image.fromarray((pred.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8)), PIL.Image.fromarray((gt.cpu().numpy().transpose(1, 2, 0) * 255).astype(np.uint8))
 
 
-def evaluate_scene(scene: Scene, model: GaussianModel, task: Task, progress_callback: Callable[[int, int], None] = None): # current, total
+def evaluate_scene(scene: Scene, model: GaussianModel, task: SimpleTrainerParams, progress_callback: Callable[[int, int], None] = None): # current, total
     with torch.no_grad():
 
         train_ssim_accum = 0

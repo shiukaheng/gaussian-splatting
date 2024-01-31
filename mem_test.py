@@ -4,12 +4,12 @@ from gaussian_renderer import render
 # Profile CUDA memory usage
 print(f'Initial without evaluators: {torch.cuda.memory_allocated(device=None)}')
 
-from split_gaussian_splatting.training_task import Task
+from split_gaussian_splatting.training_task import SimpleTrainerParams
 
 # Profile CUDA memory usage
 print(f'Initial: {torch.cuda.memory_allocated(device=None)}')
 
-task = Task(source_path="./datasets/train", iterations=200, data_device='cpu', densify_from_iter=0, densification_interval=10)
+task = SimpleTrainerParams(source_path="./datasets/train", iterations=200, data_device='cpu', densify_from_iter=0, densification_interval=10)
 
 scene = task.load_scene()
 

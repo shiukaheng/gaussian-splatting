@@ -6,7 +6,7 @@ from scene.gaussian_model import GaussianModel
 from split_gaussian_splatting.scene import Scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
 from split_gaussian_splatting.trainers.simple_trainer import SimpleTrainer
-from split_gaussian_splatting.training_task import Task
+from split_gaussian_splatting.training_task import SimpleTrainerParams
 from utils.loss_utils import l1_loss, ssim
 from tqdm import tqdm
 from typing import Callable, List
@@ -39,7 +39,7 @@ class GridTrainer(BaseTrainer):
 
         self.iteration_offset += self.last_recorded_iteration
 
-    def train(self, task: Task, scene: Scene = None, gaussian_model: GaussianModel = None):
+    def train(self, task: SimpleTrainerParams, scene: Scene = None, gaussian_model: GaussianModel = None):
 
         print("Loading scene...")
         if not scene:
@@ -51,7 +51,7 @@ class GridTrainer(BaseTrainer):
 
         # Pre-train gaussians without densification
         print("Pre-training gaussians...")
-        raise NotImplementedError("Pre-training not implemented.")
+        # TODO: raise NotImplementedError("Pre-training not implemented.")
 
         print("Splitting gaussian model...")
         split_gaussians = gaussian_model.split_to_grid(100000)
@@ -117,7 +117,7 @@ class GridTrainer(BaseTrainer):
 
         return scene, combined
     
-    def train_loop(self, task: Task, scene: Scene, camera_selection: List[Camera], gaussian_model: GaussianModel):
+    def train_loop(self, task: SimpleTrainerParams, scene: Scene, camera_selection: List[Camera], gaussian_model: GaussianModel):
 
         bg = self.create_bg(task)
 

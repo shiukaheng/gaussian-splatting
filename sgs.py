@@ -2,9 +2,9 @@ from split_gaussian_splatting.evaluate import evaluate_scene
 from split_gaussian_splatting.trainers.base_trainer import BaseTrainer
 from split_gaussian_splatting.trainers.grid_trainer import GridTrainer
 from split_gaussian_splatting.trainers.simple_trainer import SimpleTrainer
-from split_gaussian_splatting.training_task import Task
+from split_gaussian_splatting.training_task import SimpleTrainerParams
 
-task = Task(source_path="./datasets/train", iterations=200, data_device='cpu', densify_from_iter=0, densification_interval=10)
+task = SimpleTrainerParams(source_path="./datasets/train", iterations=200, data_device='cpu', densify_from_iter=0, densification_interval=10)
 
 grid_trainer = GridTrainer(lambda x, y, z: print(x, y, z))
 scene, gaussian_model = grid_trainer.train(task)

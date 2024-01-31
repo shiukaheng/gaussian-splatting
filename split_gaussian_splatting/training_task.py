@@ -1,24 +1,25 @@
-from argparse import ArgumentParser, Namespace
+from argparse import Namespace
 import os
-from typing import Any
 import uuid
 
-from attr import asdict, dataclass
-from arguments import GroupParams, ModelParams, OptimizationParams, PipelineParams
+from attr import dataclass
 from split_gaussian_splatting.scene import Scene
-from scene.gaussian_model import GaussianModel
 
 @dataclass
-class Task:
+class ProjectParams:
+    source_path: str = ""
+    images: str = "images"
+    eval: bool = False
+    # init_model_path: str = None
+
+@dataclass
+class SimpleTrainerParams:
     # Model parameters
     sh_degree: int = 3
-    source_path: str = ""
     model_path: str = ""
-    images: str = "images"
     resolution: int = -1
     white_background: bool = False
     data_device: str = "cuda"
-    eval: bool = False
 
     # Optimization parameters
     iterations: int = 30_000
@@ -80,8 +81,3 @@ class Task:
         with open(os.path.join(self.model_path, "cfg_args"), 'w') as cfg_log_f:
             cfg_log_f.write(str(self.export_training_namespace()))
         return self.model_path
-    
-# @dataclass
-# class TaskModel:
-#     task: Task
-#     model: GaussianModel
