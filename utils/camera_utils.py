@@ -32,8 +32,7 @@ def loadCam(args, id, cam_info, resolution_scale):
             if orig_w > 1600:
                 global WARNED
                 if not WARNED:
-                    print("[ INFO ] Encountered quite large input images (>1.6K pixels width), rescaling to 1.6K.\n "
-                        "If this is not desired, please explicitly specify '--resolution/-r' as 1")
+                    print(f"WARNING: Image resolution is {orig_w}x{orig_h}. This is too large for the default resolution of 1600x900. Downsampling to 1600x900.")
                     WARNED = True
                 global_down = orig_w / 1600
             else:
@@ -64,7 +63,10 @@ def cameraList_from_camInfos(cam_infos, resolution_scale, args, on_load: Callabl
         return 
 
     for id, c in enumerate(cam_infos):
-        camera_list.append(loadCam(args, id, c, resolution_scale))
+        camera = loadCam(args, id, c, resolution_scale)
+        # camera.show()
+        # print(c)
+        camera_list.append(camera)
         if on_load:
             on_load()
     

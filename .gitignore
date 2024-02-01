@@ -9,3 +9,4 @@ screenshots
 
 test_datasets/
 datasets/
+*.ply

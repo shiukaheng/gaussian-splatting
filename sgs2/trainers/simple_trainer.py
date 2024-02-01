@@ -35,6 +35,8 @@ class SimpleTrainer:
 
         for iteration in range(1, self.iterations + 1):
 
+            print(f"Iteration {iteration}/{self.iterations}")
+
             if self.network_gui:
                 self.update_network_viewer(scene, gaussian_model, bg, iteration)
 

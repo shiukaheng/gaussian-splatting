@@ -17,6 +17,7 @@ import numpy as np
 from gaussian_renderer import render
 from scene.cameras import Camera
 from sgs2.helpers import PipelineParams
+from sgs2.scene import Scene
 from utils.camera_utils import camera_to_JSON
 from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
 from torch import nn
@@ -292,6 +293,13 @@ class GaussianModel:
 
         self.active_sh_degree = self.max_sh_degree
 
+    @staticmethod
+    def from_ply(path):
+        model = GaussianModel()
+        model.load_ply(path)
+        model.training_setup()
+        return model
+
     def replace_tensor_to_optimizer(self, tensor, name):
         """
         Replaces a specified parameter tensor in the model's optimizer with a new tensor.
@@ -460,9 +468,6 @@ class GaussianModel:
             big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
             prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
-
-        self.append_stats()
-
         torch.cuda.empty_cache()
 
     def random_subsample(self, num_points):
@@ -650,3 +655,36 @@ class GaussianModel:
         dict: A dictionary containing the rendered image, the depth map, the normal map, and the visibility filter.
         """
         return render(camera, self, pipeline_params, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
+    
+    def export_training_namespace(self, scene: Scene):
+        # Selectively create a dictionary of only model parameters
+        model_params = {
+            'sh_degree': self.sh_degree,
+            'source_path': scene.source_path,
+            'model_path': self.model_path,
+            'images': scene.images,
+            'resolution': self.resolution,
+            'white_background': scene.white_background,
+            'data_device': self.data_device,
+            'eval': scene.eval
+        }
+        
+        # Convert the dictionary to a Namespace object
+        namespace = Namespace(**model_params)
+        
+        return namespace
+    
+    def create_output_folder(self) -> str:
+        if not self.model_path:
+            if os.getenv('OAR_JOB_ID'):
+                unique_str=os.getenv('OAR_JOB_ID')
+            else:
+                unique_str = str(uuid.uuid4())
+            self.model_path = os.path.join("./output/", unique_str[0:10])
+            
+        # Set up output folder
+        print("Output folder: {}".format(self.model_path))
+        os.makedirs(self.model_path, exist_ok = True)
+        with open(os.path.join(self.model_path, "cfg_args"), 'w') as cfg_log_f:
+            cfg_log_f.write(str(self.export_training_namespace()))
+        return self.model_path

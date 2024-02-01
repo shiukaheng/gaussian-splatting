@@ -15,9 +15,10 @@ class Scene:
     data_device: str = "cpu" # or "cuda"
     shuffle: bool = True
     resolution_scales=[1.0]
-    train_cam_limit = None
     on_load_progress: Callable[[int, int], None] = None
     eval: bool = False
+    camera_name_whitelist: List[str] = None
+    camera_name_blacklist: List[str] = None
 
     def __post_init__(self):
 
@@ -53,12 +54,13 @@ class Scene:
                 loaded += 1
                 if self.on_load_progress:
                     self.on_load_progress(loaded, total)
-            if self.train_cam_limit:
-                print(f"Limiting train cameras to {self.train_cam_limit}")
-                self.train_cameras[resolution_scale] = cameraList_from_camInfos(self.scene_info.train_cameras[:self.train_cam_limit], resolution_scale, self, on_load=increment)
+            if self.camera_name_whitelist:
+                filtered_cameras = [x for x in self.scene_info.train_cameras if x.image_name in self.camera_name_whitelist]
+            elif self.camera_name_blacklist:
+                filtered_cameras = [x for x in self.scene_info.train_cameras if x.image_name not in self.camera_name_blacklist]
             else:
-                self.train_cameras[resolution_scale] = cameraList_from_camInfos(self.scene_info.train_cameras, resolution_scale, self, on_load=increment)
-            # self.train_cameras[resolution_scale] = cameraList_from_camInfos(scene_info.train_cameras, resolution_scale, args)
+                filtered_cameras = self.scene_info.train_cameras
+            self.train_cameras[resolution_scale] = cameraList_from_camInfos(filtered_cameras, resolution_scale, self, on_load=increment)
             print("Loading Test Cameras")
             self.test_cameras[resolution_scale] = cameraList_from_camInfos(self.scene_info.test_cameras, resolution_scale, self)
 
@@ -87,3 +89,10 @@ class Scene:
     # Get the test cameras for a given scale
     def get_test_cameras(self, scale: float = 1.0) -> List[Camera]:
         return self.test_cameras[scale]
+    
+    def __len__(self):
+        # Filtered after image_name
+        if self.camera_name_whitelist:
+            return len(self.camera_name_whitelist)
+        else:
+            return len(self.scene_info.train_cameras)
