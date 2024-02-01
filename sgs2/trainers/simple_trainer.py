@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from random import randint
 import torch
 from gaussian_renderer import network_gui, render
+from scene.cameras import Camera
 from sgs2.gaussian import GaussianModel
 from sgs2.helpers import PipelineParams
 from sgs2.scene import Scene
 from utils.loss_utils import l1_loss, ssim
-from typing import Callable
+from typing import Callable, List
 
 # Most basic trainer that wraps the original implementation to implement the base signature.
 @dataclass
@@ -22,18 +23,20 @@ class SimpleTrainer:
     random_background: bool = False
     iteration_callback: Callable[[int, int, int], None] = None
     pipeline_params: PipelineParams = None
+    network_gui: bool = False
 
     def __post_init__(self):
         if self.pipeline_params is None:
             self.pipeline_params = PipelineParams()
 
-    def train(self, scene: Scene, gaussian_model: GaussianModel):
+    def train(self, scene: Scene, gaussian_model: GaussianModel, train_cameras: List[Camera] = None):
         bg = self._create_bg()
         viewpoint_stack = None
 
         for iteration in range(1, self.iterations + 1):
 
-            # self.update_network_viewer(train_params, gaussian_model, bg, iteration)
+            if self.network_gui:
+                self.update_network_viewer(scene, gaussian_model, bg, iteration)
 
             torch.cuda.empty_cache()
             gaussian_model.update_learning_rate(iteration)
@@ -42,7 +45,10 @@ class SimpleTrainer:
                 gaussian_model.oneupSHdegree()
 
             if not viewpoint_stack:
-                viewpoint_stack = scene.get_train_cameras().copy() # Get training cameras
+                if train_cameras is None:
+                    viewpoint_stack = scene.get_train_cameras().copy()
+                else:
+                    viewpoint_stack = train_cameras.copy()
             viewpoint_cam = viewpoint_stack.pop(randint(0, len(viewpoint_stack)-1)) # Pick a random camera
 
             render_pkg = render(viewpoint_cam, gaussian_model, self.pipeline_params, bg)
@@ -85,18 +91,18 @@ class SimpleTrainer:
         bg = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
         return bg
 
-    # def update_network_viewer(self, task, gaussian_model, bg, iteration):
-    #     if network_gui.conn == None: # If no GUI connection, we just train
-    #         network_gui.try_connect()
-    #     while network_gui.conn != None:
-    #         try:
-    #             net_image_bytes = None
-    #             custom_cam, do_training, task.convert_SHs_python, task.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
-    #             if custom_cam != None:
-    #                 net_image = render(custom_cam, gaussian_model, task, bg, scaling_modifer)["render"]
-    #                 net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
-    #             network_gui.send(net_image_bytes, task.source_path)
-    #             if do_training and ((iteration < int(task.iterations)) or not keep_alive):
-    #                 break
-    #         except Exception as e:
-    #             network_gui.conn = None
+    def update_network_viewer(self, scene: Scene, gaussian_model, bg, iteration):
+        if network_gui.conn == None: # If no GUI connection, we just train
+            network_gui.try_connect()
+        while network_gui.conn != None:
+            try:
+                net_image_bytes = None
+                custom_cam, do_training, self.pipeline_params.convert_SHs_python, self.pipeline_params.compute_cov3D_python, keep_alive, scaling_modifer = network_gui.receive()
+                if custom_cam != None:
+                    net_image = render(custom_cam, gaussian_model, self.pipeline_params, bg, scaling_modifer)["render"]
+                    net_image_bytes = memoryview((torch.clamp(net_image, min=0, max=1.0) * 255).byte().permute(1, 2, 0).contiguous().cpu().numpy())
+                network_gui.send(net_image_bytes, scene.source_path)
+                if do_training and ((iteration < int(self.iterations)) or not keep_alive):
+                    break
+            except Exception as e:
+                network_gui.conn = None

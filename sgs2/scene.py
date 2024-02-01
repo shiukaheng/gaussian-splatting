@@ -2,7 +2,8 @@ from dataclasses import dataclass
 import json
 import os
 import random
-from typing import Callable
+from typing import Callable, List
+from scene.cameras import Camera
 from scene.dataset_readers import SceneInfo, sceneLoadTypeCallbacks
 from utils.camera_utils import camera_to_JSON, cameraList_from_camInfos
 
@@ -80,9 +81,9 @@ class Scene:
             json.dump(json_cams, file)
 
     # Get the training cameras for a given scale
-    def get_train_cameras(self, scale=1.0):
+    def get_train_cameras(self, scale: float = 1.0) -> List[Camera]:
         return self.train_cameras[scale]
 
     # Get the test cameras for a given scale
-    def get_test_cameras(self, scale=1.0):
+    def get_test_cameras(self, scale: float = 1.0) -> List[Camera]:
         return self.test_cameras[scale]
