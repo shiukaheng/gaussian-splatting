@@ -34,7 +34,10 @@ class GridTrainer:
     
     def __post_init__(self):
         # Pass in all dataclass parameters to SimpleTrainer dynamically
-        self.simple_trainer = SimpleTrainer(**self.__dict__, iteration_callback=self._iteration_callback)
+        # Create new __dict__ that replaces iteration_callback with our own
+        new_dict = self.__dict__.copy()
+        new_dict["iteration_callback"] = self._iteration_callback
+        self.simple_trainer = SimpleTrainer(**new_dict)
         self.iteration_offset = 0
         self.last_recorded_iteration = 0
         self.num_models = 1
@@ -109,8 +112,9 @@ class GridTrainer:
         print("Combining gaussians...")
 
         combined = GaussianModel(gaussian_model.sh_degree)
-        combined.to_cpu()
+        combined.to_cpu() # Since the sub-models are on the CPU, we need to move the combined model to the CPU as well
         combined.append_multiple(trained_split_gaussians)
+        combined.to_gpu() # For inference, we need to move the combined model back to the GPU
 
         print("Done.")
 
