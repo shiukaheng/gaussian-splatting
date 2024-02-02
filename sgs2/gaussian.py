@@ -9,8 +9,10 @@
 # For inquiries contact  george.drettakis@inria.fr
 #
 
+from argparse import Namespace
 from dataclasses import dataclass
 import gc
+import shutil
 from typing import List, Tuple
 import torch
 import numpy as np
@@ -656,35 +658,26 @@ class GaussianModel:
         """
         return render(camera, self, pipeline_params, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
     
-    def export_training_namespace(self, scene: Scene):
-        # Selectively create a dictionary of only model parameters
+    def export_for_sibr(self, scene: Scene, output_path: str):
         model_params = {
+            'data_device': 'cuda',
+            'eval': scene.eval,
+            'images': 'images',
+            'model_path': '',
+            'resolution': -1,
             'sh_degree': self.sh_degree,
             'source_path': scene.source_path,
-            'model_path': self.model_path,
-            'images': scene.images,
-            'resolution': self.resolution,
-            'white_background': scene.white_background,
-            'data_device': self.data_device,
-            'eval': scene.eval
+            'white_background': False
         }
-        
-        # Convert the dictionary to a Namespace object
         namespace = Namespace(**model_params)
-        
-        return namespace
-    
-    def create_output_folder(self) -> str:
-        if not self.model_path:
-            if os.getenv('OAR_JOB_ID'):
-                unique_str=os.getenv('OAR_JOB_ID')
-            else:
-                unique_str = str(uuid.uuid4())
-            self.model_path = os.path.join("./output/", unique_str[0:10])
-            
-        # Set up output folder
-        print("Output folder: {}".format(self.model_path))
-        os.makedirs(self.model_path, exist_ok = True)
-        with open(os.path.join(self.model_path, "cfg_args"), 'w') as cfg_log_f:
-            cfg_log_f.write(str(self.export_training_namespace()))
-        return self.model_path
+        # Recursively create the output folder
+        mkdir_p(os.path.dirname(output_path))
+        # Save namespace into cfg_args
+        with open(os.path.join(output_path, "cfg_args"), 'w') as cfg_log_f:
+            cfg_log_f.write(str(namespace))
+        # Create data/sparse/0 folder recursively
+        mkdir_p(os.path.join(output_path, "data/sparse/0"))
+        # Create point_cloud directory
+        mkdir_p(os.path.join(output_path, "point_cloud"))
+        # Save point cloud as point_cloud.ply in point_cloud directory
+        self.save_ply(os.path.join(output_path, "point_cloud/point_cloud.ply"))

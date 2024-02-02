@@ -39,3 +39,8 @@ def evaluate():
     # Load ply files
     sub_gaussian_model = GaussianModel.from_ply("./alleyds_subset.ply")
     full_gaussian_model = GaussianModel.from_ply("./alleyds_full.ply")
+
+def save():
+    full_scene = Scene("/home/heng/Documents/GitHub/gaussian-splatting/datasets/alleyds")
+    full_gaussian_model = GaussianModel.from_scene(full_scene)
+    full_gaussian_model.export_for_sibr(full_scene, "./output/alleyds_full_sibr/")
