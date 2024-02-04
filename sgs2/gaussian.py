@@ -182,8 +182,12 @@ class GaussianModel:
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def create_from_scene(self, scene):
-        self.create_from_pcd(scene.scene_info.point_cloud, scene.cameras_extent)
+    @staticmethod
+    def create_from_scene(scene):
+        gaussian_model = GaussianModel()
+        gaussian_model.create_from_pcd(scene.scene_info.point_cloud, scene.cameras_extent)
+        gaussian_model.training_setup()
+        return gaussian_model
 
     def training_setup(self):
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -229,7 +233,7 @@ class GaussianModel:
         return l
 
     def save_ply(self, path):
-        mkdir_p(os.path.dirname(path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
 
         xyz = self._xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
@@ -509,7 +513,7 @@ class GaussianModel:
         with torch.no_grad():
             return torch.min(self.get_xyz, dim=0).values, torch.max(self.get_xyz, dim=0).values
         
-    def calculate_occupied_grids(self, side_length=10.):
+    def calculate_occupied_grids(self, side_length=10.) -> List[Tuple[torch.Tensor, torch.Tensor]]:
         with torch.no_grad():
             min_point, max_point = self.calculate_bounding_box()
 
@@ -543,37 +547,132 @@ class GaussianModel:
         sub_models: List[Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]] = []
 
         for grid_min, grid_max in occupied_grids:
-            grid_min = grid_min.cuda()
-            grid_max = grid_max.cuda()
-            # Determine points within this grid cell
-            in_grid = (self._xyz >= grid_min) & (self._xyz < grid_max)
-            in_grid_mask = in_grid.all(dim=1)
-
-            if in_grid_mask.any():
-                # Create a new GaussianModel for this grid cell
-                sub_model = GaussianModel(self.max_sh_degree)
-                sub_model._xyz = nn.Parameter(self._xyz[in_grid_mask])
-                sub_model._features_dc = nn.Parameter(self._features_dc[in_grid_mask])
-                sub_model._features_rest = nn.Parameter(self._features_rest[in_grid_mask])
-                sub_model._scaling = nn.Parameter(self._scaling[in_grid_mask])
-                sub_model._rotation = nn.Parameter(self._rotation[in_grid_mask])
-                sub_model._opacity = nn.Parameter(self._opacity[in_grid_mask])
-                # max_radii2D, xyz_gradient_accum, and denom
-                sub_model.max_radii2D = self.max_radii2D[in_grid_mask].cuda()
-                sub_model.xyz_gradient_accum = self.xyz_gradient_accum[in_grid_mask].cuda()
-                sub_model.denom = self.denom[in_grid_mask].cuda()
-                
-                sub_model.active_sh_degree = self.active_sh_degree
-                sub_model.max_sh_degree = self.max_sh_degree
-                # Copy other necessary properties and setup functions
-                sub_model.setup_functions()
-                # Add to the list of sub-models
-                if archive_to_cpu:
-                    sub_model.to_cpu()
-                sub_models.append((sub_model, (grid_min, grid_max)))
+            sub_model, grid_bounds = self.cut_cell(grid_min, grid_max, archive_to_cpu)
+            if sub_model:
+                sub_models.append((sub_model, grid_bounds))
 
         return sub_models
     
+    def split_with_grids(self, grids: List[Tuple[torch.Tensor, torch.Tensor]], archive_to_cpu: bool = False) -> List[Tuple['GaussianModel', Tuple[torch.Tensor, torch.Tensor]]]:
+        """
+        Splits the GaussianModel into sub-models based on a list of grid cells.
+
+        Args:
+            grids (List[Tuple[torch.Tensor, torch.Tensor]]): A list of tuples, where each tuple contains the minimum and maximum boundaries of a grid cell.
+            archive_to_cpu (bool): Whether to archive the sub-models to CPU. Default is False.
+
+        Returns:
+            List[Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]]: A list of tuples, where each tuple contains a sub-model and the corresponding grid cell boundaries.
+        """
+        sub_models: List[Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]] = []
+
+        for grid_min, grid_max in grids:
+            sub_model, grid_bounds = self.cut_cell(grid_min, grid_max, archive_to_cpu)
+            if sub_model:
+                sub_models.append((sub_model, grid_bounds))
+
+        return sub_models
+
+    def cut_cell(self, grid_min: torch.Tensor, grid_max: torch.Tensor, archive_to_cpu: bool) -> Tuple['GaussianModel', Tuple[torch.Tensor, torch.Tensor]]:
+        """
+        Creates a sub-model for the specified grid cell.
+
+        Args:
+            grid_min (torch.Tensor): The minimum boundaries of the grid cell.
+            grid_max (torch.Tensor): The maximum boundaries of the grid cell.
+            archive_to_cpu (bool): Whether to archive the sub-model to CPU.
+
+        Returns:
+            Tuple[GaussianModel, Tuple[torch.Tensor, torch.Tensor]]: A tuple containing the sub-model and the corresponding grid cell boundaries, if any points are within the grid cell. Otherwise, returns None.
+        """
+        grid_min = grid_min.cuda()
+        grid_max = grid_max.cuda()
+        # Determine points within this grid cell
+        in_grid = (self._xyz >= grid_min) & (self._xyz < grid_max)
+        in_grid_mask = in_grid.all(dim=1)
+
+        if in_grid_mask.any():
+            # Create a new GaussianModel for this grid cell
+            sub_model = GaussianModel(self.max_sh_degree)
+            sub_model._xyz = nn.Parameter(self._xyz[in_grid_mask])
+            sub_model._features_dc = nn.Parameter(self._features_dc[in_grid_mask])
+            sub_model._features_rest = nn.Parameter(self._features_rest[in_grid_mask])
+            sub_model._scaling = nn.Parameter(self._scaling[in_grid_mask])
+            sub_model._rotation = nn.Parameter(self._rotation[in_grid_mask])
+            sub_model._opacity = nn.Parameter(self._opacity[in_grid_mask])
+            # max_radii2D, xyz_gradient_accum, and denom
+            sub_model.max_radii2D = self.max_radii2D[in_grid_mask].cuda()
+            sub_model.xyz_gradient_accum = self.xyz_gradient_accum[in_grid_mask].cuda()
+            sub_model.denom = self.denom[in_grid_mask].cuda()
+            
+            sub_model.active_sh_degree = self.active_sh_degree
+            sub_model.max_sh_degree = self.max_sh_degree
+            # Copy other necessary properties and setup functions
+            sub_model.setup_functions()
+            # Optionally archive to CPU
+            if archive_to_cpu:
+                sub_model.to_cpu()
+            return sub_model, (grid_min, grid_max)
+        else:
+            return None, (grid_min, grid_max)
+    
+    def clone(self):
+        """
+        Clones the GaussianModel.
+
+        Returns:
+        GaussianModel: A clone of the GaussianModel.
+        """
+        clone = GaussianModel(self.max_sh_degree)
+        clone._xyz = nn.Parameter(self._xyz.clone().detach().requires_grad_(True))
+        clone._features_dc = nn.Parameter(self._features_dc.clone().detach().requires_grad_(True))
+        clone._features_rest = nn.Parameter(self._features_rest.clone().detach().requires_grad_(True))
+        clone._scaling = nn.Parameter(self._scaling.clone().detach().requires_grad_(True))
+        clone._rotation = nn.Parameter(self._rotation.clone().detach().requires_grad_(True))
+        clone._opacity = nn.Parameter(self._opacity.clone().detach().requires_grad_(True))
+        clone.max_radii2D = self.max_radii2D.clone().detach().cuda()
+        clone.xyz_gradient_accum = self.xyz_gradient_accum.clone().detach().cuda()
+        clone.denom = self.denom.clone().detach().cuda()
+        clone.active_sh_degree = self.active_sh_degree
+        clone.max_sh_degree = self.max_sh_degree
+        clone.setup_functions()
+        return clone
+    
+    def color_segment_cell(self, grid_min: torch.Tensor, grid_max: torch.Tensor):
+        """
+        Colors all points within a grid cell white, and all other points black.
+
+        Args:
+            grid_min (torch.Tensor): The minimum boundaries of the grid cell.
+            grid_max (torch.Tensor): The maximum boundaries of the grid cell.
+        """
+        grid_min = grid_min.cuda()
+        grid_max = grid_max.cuda()
+        # Determine points within this grid cell
+        in_grid = (self._xyz >= grid_min) & (self._xyz < grid_max)
+        in_grid_mask = in_grid.all(dim=1)
+
+        black = torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda")
+        black = RGB2SH(black)
+        white = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+        white = RGB2SH(white)
+
+        # Color points within the grid cell white
+        self._features_dc[in_grid_mask] = white
+        self._features_rest[in_grid_mask] = torch.zeros_like(self._features_rest[in_grid_mask])
+        # Color points outside the grid cell black
+        self._features_dc[~in_grid_mask] = black
+        self._features_rest[~in_grid_mask] = torch.zeros_like(self._features_rest[~in_grid_mask])
+
+    def binarize_opacity(self, threshold: float):
+        """
+        Binarizes the opacity of the model.
+
+        Args:
+            threshold (float): The threshold to use for binarization.
+        """
+        self._opacity = torch.where(self._opacity < threshold, torch.zeros_like(self._opacity), torch.ones_like(self._opacity))
+
     def cull_outside_box(self, box_min: torch.Tensor, box_max: torch.Tensor):
         """
         Culls points outside a box.
@@ -659,6 +758,8 @@ class GaussianModel:
         return render(camera, self, pipeline_params, torch.tensor([0, 0, 0], dtype=torch.float32, device="cuda"))
     
     def export_for_sibr(self, scene: Scene, output_path: str):
+        # Resolve output path to absolute path
+        output_path = os.path.abspath(output_path)
         model_params = {
             'data_device': 'cuda',
             'eval': scene.eval,
@@ -671,13 +772,18 @@ class GaussianModel:
         }
         namespace = Namespace(**model_params)
         # Recursively create the output folder
-        mkdir_p(os.path.dirname(output_path))
+        print("Creating output folder at", output_path)
+        os.makedirs(output_path, exist_ok=True)
         # Save namespace into cfg_args
         with open(os.path.join(output_path, "cfg_args"), 'w') as cfg_log_f:
             cfg_log_f.write(str(namespace))
-        # Create data/sparse/0 folder recursively
-        mkdir_p(os.path.join(output_path, "data/sparse/0"))
         # Create point_cloud directory
-        mkdir_p(os.path.join(output_path, "point_cloud"))
+        os.makedirs(os.path.join(output_path, "point_cloud"), exist_ok=True)
         # Save point cloud as point_cloud.ply in point_cloud directory
         self.save_ply(os.path.join(output_path, "point_cloud/point_cloud.ply"))
+
+    def import_from_sibr(self, input_path: str):
+        # Resolve input path to absolute path
+        input_path = os.path.abspath(input_path)
+        # Load point cloud from point_cloud.ply in point_cloud directory
+        self.load_ply(os.path.join(input_path, "point_cloud/point_cloud.ply"))

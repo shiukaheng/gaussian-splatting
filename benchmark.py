@@ -1,3 +1,3 @@
-import benchmarks.local_global_train as lgt
+import benchmarks.grid_train as grid_train
 
-lgt.save()
+grid_train.train()

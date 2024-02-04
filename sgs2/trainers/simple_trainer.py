@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from random import randint
 import torch
+from tqdm import tqdm
 from gaussian_renderer import network_gui, render
 from scene.cameras import Camera
 from sgs2.gaussian import GaussianModel
@@ -25,6 +26,7 @@ class SimpleTrainer:
     pipeline_params: PipelineParams = None
     network_gui: bool = False
 
+
     def __post_init__(self):
         if self.pipeline_params is None:
             self.pipeline_params = PipelineParams()
@@ -33,9 +35,8 @@ class SimpleTrainer:
         bg = self._create_bg()
         viewpoint_stack = None
 
-        for iteration in range(1, self.iterations + 1):
+        for iteration in tqdm(range(1, self.iterations + 1)):
 
-            print(f"Iteration {iteration}/{self.iterations}")
 
             if self.network_gui:
                 self.update_network_viewer(scene, gaussian_model, bg, iteration)
@@ -82,11 +83,11 @@ class SimpleTrainer:
                     gaussian_model.optimizer.zero_grad(set_to_none = True)
 
             if self.iteration_callback:
-                self.iteration_callback(iteration, gaussian_model._xyz.shape[0], torch.cuda.memory_allocated() / 1024 / 1024)
+                self.iteration_callback(iteration, gaussian_model._xyz.shape[0], torch.cuda.memory_allocated() / 1024 / 1024, gaussian_model)
 
             torch.cuda.empty_cache()
 
-        return scene, gaussian_model
+        return gaussian_model
 
     def _create_bg(self):
         bg_color = [1, 1, 1] if self.white_background else [0, 0, 0]
