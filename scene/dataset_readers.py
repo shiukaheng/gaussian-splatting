@@ -33,6 +33,7 @@ class CameraInfo(NamedTuple):
     image_name: str
     width: int
     height: int
+    point3d_ids: list
 
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -66,7 +67,7 @@ def getNerfppNorm(cam_info):
 
 def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
     cam_infos = []
-    for idx, key in enumerate(cam_extrinsics):
+    for idx, key in enumerate(cam_extrinsics): # Iterate over all cameras
         sys.stdout.write('\r')
         # the exact output you're looking for:
         sys.stdout.write("Reading camera {}/{}".format(idx+1, len(cam_extrinsics)))
@@ -98,7 +99,8 @@ def readColmapCameras(cam_extrinsics, cam_intrinsics, images_folder):
         image = Image.open(image_path)
 
         cam_info = CameraInfo(uid=uid, R=R, T=T, FovY=FovY, FovX=FovX, image=image,
-                              image_path=image_path, image_name=image_name, width=width, height=height)
+                              image_path=image_path, image_name=image_name, width=width,
+                               height=height, point3d_ids=extr.point3D_ids)
         cam_infos.append(cam_info)
     sys.stdout.write('\n')
     return cam_infos

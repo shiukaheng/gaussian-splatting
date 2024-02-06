@@ -56,6 +56,7 @@ class GridTrainer:
         del new_dict["chunk_loss_masking"]
         del new_dict["draft_iterations"]
         del new_dict["visibility_threshold"]
+        del new_dict["clean_chunk_edges"]
         self.simple_trainer = SimpleTrainer(**new_dict)
         self.iteration_offset = 0
         self.last_recorded_iteration = 0
@@ -64,6 +65,26 @@ class GridTrainer:
         self.active_model = 0
         if self.pipeline_params is None:
             self.pipeline_params = PipelineParams()
+
+    # Hash based on all parameters: white_background, iterations, lambda_dssim, densification_interval, opacity_reset_interval, densify_from_iter, densify_until_iter, densify_grad_threshold, random_background, iteration_callback, pipeline_params, network_gui, clean_chunk_edges
+    def __hash__(self):
+        return hash(
+            (
+                self.white_background,
+                self.iterations,
+                self.lambda_dssim,
+                self.densification_interval,
+                self.opacity_reset_interval,
+                self.densify_from_iter,
+                self.densify_until_iter,
+                self.densify_grad_threshold,
+                self.random_background,
+                self.iteration_callback,
+                self.pipeline_params,
+                self.network_gui,
+                self.clean_chunk_edges
+            )
+        )
 
     # For progress reporting only
     def record_offset(self):
@@ -101,17 +122,18 @@ class GridTrainer:
                         "visibility_mask": render_intensity
                     }
 
-            split_gaussians = gaussian_model.split_with_grids(occupied_grids)
+            split_gaussians = gaussian_model.split_with_grids(occupied_grids, True)
 
         final_models = []
 
         # Stage 3: Train split gaussians
         for i, (sub_gaussians, (min, max)) in enumerate(split_gaussians):
             print(f"Training submodel {i+1}/{len(split_gaussians)}...")
+            sub_gaussians.to_gpu()
             model = self.train_submodel(scene, cameras, sub_gaussians, visibility[i])
-            model.to_cpu()
             if self.clean_chunk_edges:
                 model.cull_outside_box(min, max)
+            model.to_cpu()
             final_models.append(model)
 
         # Stage 4: Combine gaussians
@@ -119,7 +141,7 @@ class GridTrainer:
 
         combined = GaussianModel(gaussian_model.sh_degree)
         combined.to_cpu() # Since the sub-models are on the CPU, we need to move the combined model to the CPU as well
-        # combined.append_multiple(final_models)
+        combined.append_multiple(final_models)
         combined.to_gpu() # For inference, we need to move the combined model back to the GPU
 
         print("Done.")
@@ -157,7 +179,10 @@ class GridTrainer:
             image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
             ground_truth = viewpoint_cam.original_image.cuda()
             # Let's obtain the mask
-            mask = visibility[viewpoint_cam.image_name]["visibility_mask"]
+            if self.chunk_loss_masking:
+                mask = visibility[viewpoint_cam.image_name]["visibility_mask"]
+            else:
+                mask = None
             # print the dimensions of the mask and raise error to debug
             l1_val = l1_loss(image, ground_truth, mask=mask)
             ssim_val = ssim(image, ground_truth, mask=mask)
@@ -190,7 +215,7 @@ class GridTrainer:
             torch.cuda.empty_cache()
 
         return gaussian_model
-            
+        
     def update_network_viewer(self, scene: Scene, gaussian_model, bg, iteration):
         if network_gui.conn == None: # If no GUI connection, we just train
             network_gui.try_connect()

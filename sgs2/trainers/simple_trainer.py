@@ -25,7 +25,7 @@ class SimpleTrainer:
     iteration_callback: Callable[[int, int, int], None] = None
     pipeline_params: PipelineParams = None
     network_gui: bool = False
-
+    visualize_gradients: bool = False
 
     def __post_init__(self):
         if self.pipeline_params is None:

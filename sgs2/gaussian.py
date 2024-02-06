@@ -781,9 +781,11 @@ class GaussianModel:
         os.makedirs(os.path.join(output_path, "point_cloud"), exist_ok=True)
         # Save point cloud as point_cloud.ply in point_cloud directory
         self.save_ply(os.path.join(output_path, "point_cloud/point_cloud.ply"))
+        return self
 
     def import_from_sibr(self, input_path: str):
         # Resolve input path to absolute path
         input_path = os.path.abspath(input_path)
         # Load point cloud from point_cloud.ply in point_cloud directory
         self.load_ply(os.path.join(input_path, "point_cloud/point_cloud.ply"))
+        return self
